@@ -1,9 +1,12 @@
 package com.hafsaIlyas.expensetracker.ui.screens.expenselist
+
 // ui/screens/expenselist/ExpenseListScreen.kt
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -11,6 +14,8 @@ import androidx.compose.material3.SwipeToDismissBoxValue.EndToStart
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -18,6 +23,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.hafsaIlyas.expensetracker.data.local.entity.Expense
+import com.hafsaIlyas.expensetracker.ui.components.CategoryIcon
+import com.hafsaIlyas.expensetracker.ui.components.PullToRefreshContainer
+import com.hafsaIlyas.expensetracker.ui.components.categoryColor
 import com.hafsaIlyas.expensetracker.ui.navigation.Screen
 import com.hafsaIlyas.expensetracker.ui.viewmodel.ExpenseViewModel
 import java.text.NumberFormat
@@ -33,36 +41,31 @@ private val CATEGORIES = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExpenseListScreen(
-    navController: NavController,
-    viewModel: ExpenseViewModel = hiltViewModel()
+    navController : NavController,
+    viewModel     : ExpenseViewModel = hiltViewModel()
 ) {
     val uiState       by viewModel.listUiState.collectAsState()
     val pendingDelete by viewModel.pendingDeletion.collectAsState()
     val snackbarHost  = remember { SnackbarHostState() }
-    val scope         = rememberCoroutineScope()
 
-    // Flush any pending delete when leaving the screen
     DisposableEffect(Unit) {
         onDispose { viewModel.commitPendingDelete() }
     }
 
-    // Show Snackbar whenever there's a pending deletion
     LaunchedEffect(pendingDelete) {
         if (pendingDelete != null) {
             val category = pendingDelete!!.category.drop(2).trim()
             val result = snackbarHost.showSnackbar(
                 message     = "$category expense deleted",
                 actionLabel = "Undo",
-                duration    = SnackbarDuration.Short
+                duration    = SnackbarDuration.Short,
             )
-            if (result == SnackbarResult.ActionPerformed) {
-                viewModel.undoDelete()
-            } else {
-                // Snackbar timed out or was dismissed — commit the delete
-                viewModel.commitPendingDelete()
-            }
+            if (result == SnackbarResult.ActionPerformed) viewModel.undoDelete()
+            else viewModel.commitPendingDelete()
         }
     }
+
+    val isFiltering = uiState.searchQuery.isNotEmpty() || uiState.selectedCategory.isNotEmpty()
 
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHost) },
@@ -70,61 +73,95 @@ fun ExpenseListScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surface)
                     .padding(horizontal = 16.dp)
-                    .padding(top = 8.dp, bottom = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(top = 12.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                // Title row
                 Row(
                     modifier              = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment     = Alignment.CenterVertically
+                    verticalAlignment     = Alignment.CenterVertically,
                 ) {
                     Column {
                         Text(
-                            "Expenses",
+                            "Transactions",
                             style      = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
                         )
-                        Text(
-                            "${uiState.filteredExpenses.size} of ${uiState.allExpenses.size} entries",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        AnimatedContent(
+                            targetState = uiState.filteredExpenses.size to uiState.allExpenses.size,
+                            label       = "count_label",
+                        ) { (filtered, total) ->
+                            Text(
+                                text  = if (isFiltering) "$filtered of $total entries"
+                                else "$total entries",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    // Active filter badge
+                    AnimatedVisibility(visible = isFiltering) {
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                        ) {
+                            Row(
+                                modifier  = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.FilterList,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint     = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                                Text(
+                                    "Filtered",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                        }
                     }
                 }
 
-                // ── Search bar ────────────────────────────────────────────────
+                // Search bar
                 OutlinedTextField(
                     value         = uiState.searchQuery,
                     onValueChange = viewModel::onSearchQueryChange,
                     modifier      = Modifier.fillMaxWidth(),
-                    placeholder   = { Text("Search by note or category...") },
+                    placeholder   = { Text("Search notes or categories…") },
                     leadingIcon   = { Icon(Icons.Default.Search, null) },
                     trailingIcon  = {
                         AnimatedVisibility(uiState.searchQuery.isNotEmpty()) {
                             IconButton(onClick = { viewModel.onSearchQueryChange("") }) {
-                                Icon(Icons.Default.Close, "Clear search")
+                                Icon(Icons.Default.Close, "Clear")
                             }
                         }
                     },
                     singleLine = true,
-                    shape      = MaterialTheme.shapes.extraLarge
+                    shape      = MaterialTheme.shapes.extraLarge,
                 )
 
-                // ── Category filter chips ─────────────────────────────────────
+                // Category chips
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     item {
                         FilterChip(
                             selected = uiState.selectedCategory.isEmpty(),
                             onClick  = { viewModel.onListCategoryFilterChange("") },
-                            label    = { Text("All") }
+                            label    = { Text("All") },
                         )
                     }
                     items(CATEGORIES) { cat ->
                         FilterChip(
                             selected = uiState.selectedCategory == cat,
                             onClick  = { viewModel.onListCategoryFilterChange(cat) },
-                            label    = { Text(cat) }
+                            label    = { Text(cat) },
                         )
                     }
                 }
@@ -132,90 +169,97 @@ fun ExpenseListScreen(
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = { navController.navigate(Screen.AddExpense.createRoute()) },
-                icon    = { Icon(Icons.Default.Add, "Add") },
-                text    = { Text("Add Expense") }
+                onClick      = { navController.navigate(Screen.AddExpense.createRoute()) },
+                icon         = { Icon(Icons.Default.Add, "Add") },
+                text         = { Text("Add Expense") },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor   = MaterialTheme.colorScheme.onPrimary,
             )
         }
     ) { padding ->
         when {
             uiState.isLoading -> Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
-            }
+                Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center,
+            ) { CircularProgressIndicator() }
 
             uiState.filteredExpenses.isEmpty() -> EmptyState(
-                isFiltered = uiState.searchQuery.isNotEmpty() || uiState.selectedCategory.isNotEmpty(),
-                modifier   = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
+                isFiltered = isFiltering,
+                onClearFilters = {
+                    viewModel.onSearchQueryChange("")
+                    viewModel.onListCategoryFilterChange("")
+                },
+                modifier = Modifier.fillMaxSize().padding(padding),
             )
 
-            else -> ExpenseList(
-                expenses  = uiState.filteredExpenses,
-                onDelete  = { expense -> viewModel.requestDelete(expense) },
-                modifier  = Modifier.padding(padding)
-            )
+            else -> PullToRefreshContainer(
+                isRefreshing = uiState.isLoading,
+                onRefresh    = { /* viewModel.refresh() — wire up if ViewModel supports it */ },
+                modifier     = Modifier.padding(padding),
+            ) {
+                GroupedExpenseList(
+                    expenses = uiState.filteredExpenses,
+                    onDelete = { viewModel.requestDelete(it) },
+                )
+            }
         }
     }
 }
 
-@Composable
-private fun EmptyState(isFiltered: Boolean, modifier: Modifier = Modifier) {
-    Column(
-        modifier            = modifier,
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(
-            if (isFiltered) Icons.Default.SearchOff else Icons.Default.Receipt,
-            contentDescription = null,
-            modifier = Modifier.size(72.dp),
-            tint     = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-        )
-        Spacer(Modifier.height(16.dp))
-        Text(
-            if (isFiltered) "No results found" else "No expenses yet!",
-            style      = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            if (isFiltered) "Try adjusting your search or filters."
-            else "Tap the button below to add your first expense.",
-            style     = MaterialTheme.typography.bodyMedium,
-            color     = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier  = Modifier.padding(horizontal = 48.dp)
-        )
-    }
-}
+// ── Grouped list ──────────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ExpenseList(
-    expenses: List<Expense>,
-    onDelete: (Expense) -> Unit,
-    modifier: Modifier = Modifier
+private fun GroupedExpenseList(
+    expenses : List<Expense>,
+    onDelete : (Expense) -> Unit,
 ) {
+    // Group expenses by formatted date header
+    val grouped = remember(expenses) {
+        expenses.groupBy { expense ->
+            val cal     = Calendar.getInstance().apply { timeInMillis = expense.date }
+            val today   = Calendar.getInstance()
+            val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
+            when {
+                isSameDay(cal, today)     -> "Today"
+                isSameDay(cal, yesterday) -> "Yesterday"
+                else                      -> SimpleDateFormat("MMMM dd, yyyy", Locale.getDefault())
+                    .format(Date(expense.date))
+            }
+        }
+    }
+
     LazyColumn(
-        modifier            = modifier.fillMaxSize(),
+        modifier            = Modifier.fillMaxSize(),
         contentPadding      = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        items(expenses, key = { it.id }) { expense ->
-            SwipeToDismissExpenseCard(
-                expense  = expense,
-                onDelete = { onDelete(expense) }
-            )
+        grouped.forEach { (dateLabel, dayExpenses) ->
+            // Date section header
+            item(key = "header_$dateLabel") {
+                Text(
+                    text     = dateLabel,
+                    style    = MaterialTheme.typography.labelLarge,
+                    color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+                )
+            }
+            items(dayExpenses, key = { it.id }) { expense ->
+                SwipeToDismissExpenseCard(
+                    expense  = expense,
+                    onDelete = { onDelete(expense) },
+                )
+                Spacer(Modifier.height(8.dp))
+            }
         }
         item { Spacer(Modifier.height(80.dp)) }
     }
 }
+
+private fun isSameDay(a: Calendar, b: Calendar) =
+    a.get(Calendar.YEAR)        == b.get(Calendar.YEAR) &&
+            a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
+
+// ── Swipe-to-dismiss wrapper ──────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -227,65 +271,97 @@ private fun SwipeToDismissExpenseCard(expense: Expense, onDelete: () -> Unit) {
         state                       = dismissState,
         enableDismissFromStartToEnd = false,
         backgroundContent           = {
-            val color by animateColorAsState(
-                if (dismissState.targetValue == EndToStart) MaterialTheme.colorScheme.errorContainer
+            val progress = dismissState.progress
+            val bgColor by animateColorAsState(
+                targetValue = if (dismissState.targetValue == EndToStart)
+                    MaterialTheme.colorScheme.errorContainer
                 else MaterialTheme.colorScheme.surfaceVariant,
-                label = "swipe_bg"
+                label = "swipe_bg",
             )
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
-                Card(
-                    modifier = Modifier.fillMaxSize(),
-                    colors   = CardDefaults.cardColors(containerColor = color),
-                    shape    = MaterialTheme.shapes.medium
+            Box(
+                modifier         = Modifier
+                    .fillMaxSize()
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(bgColor),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Column(
+                    modifier            = Modifier.padding(end = 20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
-                        Icon(
-                            Icons.Default.Delete, "Delete",
-                            tint     = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(end = 20.dp)
-                        )
-                    }
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete",
+                        tint     = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(24.dp),
+                    )
+                    Text(
+                        "Delete",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             }
         }
-    ) { ExpenseCard(expense) }
+    ) {
+        ExpenseCard(expense)
+    }
 }
+
+// ── Expense card with left accent border ──────────────────────────────────────
 
 @Composable
 private fun ExpenseCard(expense: Expense) {
-    val formatter = NumberFormat.getCurrencyInstance(Locale.US)
-    val dateStr   = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date(expense.date))
+    val formatter = remember { NumberFormat.getCurrencyInstance(Locale.US) }
+    val dateStr   = remember(expense.date) {
+        SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date(expense.date))
+    }
+    val accentColor = categoryColor(expense.category)
 
-    Card(
-        modifier  = Modifier.fillMaxWidth(),
-        shape     = MaterialTheme.shapes.medium,
-        colors    = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        elevation = CardDefaults.cardElevation(1.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
+        // Left accent bar
+        Box(
+            modifier = Modifier
+                .width(4.dp)
+                .fillMaxHeight()
+                .clip(
+                    RoundedCornerShape(
+                        topStart    = 12.dp,
+                        bottomStart = 12.dp,
+                    )
+                )
+                .background(accentColor)
+                .align(Alignment.CenterVertically)
+        )
+
         Row(
             modifier              = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 14.dp, vertical = 14.dp),
             verticalAlignment     = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Surface(
-                shape    = MaterialTheme.shapes.small,
-                color    = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.size(44.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(expense.category.take(2), style = MaterialTheme.typography.titleMedium)
-                }
-            }
+            CategoryIcon(
+                category = expense.category,
+                size     = 44.dp,
+            )
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    expense.category.drop(2).trim(),
+                    text = expense.category.drop(
+                        expense.category.indexOfFirst { it == ' ' }
+                            .takeIf { it >= 0 }?.plus(1) ?: 0
+                    ).trim(),
                     style      = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     maxLines   = 1,
-                    overflow   = TextOverflow.Ellipsis
+                    overflow   = TextOverflow.Ellipsis,
                 )
                 if (expense.note.isNotBlank()) {
                     Text(
@@ -293,21 +369,79 @@ private fun ExpenseCard(expense: Expense) {
                         style    = MaterialTheme.typography.bodySmall,
                         color    = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 Text(
                     dateStr,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
                 )
             }
+            Spacer(Modifier.width(8.dp))
             Text(
-                formatter.format(expense.amount),
+                text       = formatter.format(expense.amount),
                 style      = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color      = MaterialTheme.colorScheme.primary
+                fontWeight = FontWeight.ExtraBold,
+                color      = accentColor,
             )
+        }
+    }
+}
+
+// ── Empty / filtered state ────────────────────────────────────────────────────
+
+@Composable
+private fun EmptyState(
+    isFiltered     : Boolean,
+    onClearFilters : () -> Unit,
+    modifier       : Modifier = Modifier,
+) {
+    Column(
+        modifier            = modifier,
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+        ) {
+            Icon(
+                imageVector        = if (isFiltered) Icons.Default.SearchOff
+                else Icons.Default.ReceiptLong,
+                contentDescription = null,
+                tint               = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                modifier           = Modifier
+                    .padding(20.dp)
+                    .size(56.dp),
+            )
+        }
+        Spacer(Modifier.height(20.dp))
+        Text(
+            text       = if (isFiltered) "No results found" else "No expenses yet!",
+            style      = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text      = if (isFiltered)
+                "Try adjusting your search or clearing the active filters."
+            else "Your transactions will appear here.\nTap the button below to get started.",
+            style     = MaterialTheme.typography.bodyMedium,
+            color     = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier  = Modifier.padding(horizontal = 40.dp),
+        )
+        if (isFiltered) {
+            Spacer(Modifier.height(20.dp))
+            OutlinedButton(
+                onClick = onClearFilters,
+                shape   = MaterialTheme.shapes.medium,
+            ) {
+                Icon(Icons.Default.FilterListOff, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Clear Filters")
+            }
         }
     }
 }
