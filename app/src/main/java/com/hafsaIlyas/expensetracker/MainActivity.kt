@@ -1,19 +1,23 @@
 package com.hafsaIlyas.expensetracker
+
 // MainActivity.kt
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -33,11 +37,41 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             ExpenseTrackerTheme {
-                MainScaffold()
+                AppRoot()
             }
         }
     }
 }
+
+// ── Root — splash → main flow ─────────────────────────────────────────────────
+
+@Composable
+private fun AppRoot() {
+    var splashDone by remember { mutableStateOf(false) }
+
+    AnimatedContent(
+        targetState  = splashDone,
+        label        = "splash_to_main",
+        transitionSpec = { fadeIn(tween(400)) togetherWith fadeOut(tween(300)) }
+    ) { ready ->
+        if (!ready) {
+            com.hafsaIlyas.expensetracker.ui.screens.splash.SplashScreen(
+                onSplashComplete = { splashDone = true }
+            )
+        } else {
+            MainScaffold()
+        }
+    }
+}
+
+// ── Main scaffold ─────────────────────────────────────────────────────────────
+
+private data class BottomNavItem(
+    val screen      : Screen,
+    val label       : String,
+    val selectedIcon: ImageVector,
+    val unselIcon   : ImageVector
+)
 
 @Composable
 private fun MainScaffold() {
@@ -45,20 +79,17 @@ private fun MainScaffold() {
     val navBackStack  by navController.currentBackStackEntryAsState()
     val currentDest   = navBackStack?.destination
 
-    val prefsRepo     = hiltViewModel<SettingsViewModel>()
-    val settingsState by prefsRepo.uiState.collectAsState()
+    val settingsVm    = hiltViewModel<SettingsViewModel>()
+    val settingsState by settingsVm.uiState.collectAsState()
 
     val bottomNavItems = listOf(
-        Triple(Screen.Dashboard,   "Dashboard",   Icons.Default.Home),
-        Triple(Screen.ExpenseList, "History",     Icons.Default.List),
-        Triple(Screen.AiInsights,  "AI Insights", Icons.Default.AutoAwesome),
-        Triple(Screen.Settings,    "Settings",    Icons.Default.Settings),
+        BottomNavItem(Screen.Dashboard,   "Dashboard", Icons.Filled.Home,        Icons.Outlined.Home),
+        BottomNavItem(Screen.ExpenseList, "History",   Icons.Filled.Receipt,      Icons.Outlined.Receipt),
+        BottomNavItem(Screen.AiInsights,  "AI",        Icons.Filled.AutoAwesome,  Icons.Outlined.AutoAwesome),
+        BottomNavItem(Screen.Settings,    "Settings",  Icons.Filled.Settings,     Icons.Outlined.Settings),
     )
 
-    // Hide bottom bar only on AddExpense (has its own UI chrome)
-    val hideBottomBar = currentDest?.route in listOf(
-        Screen.AddExpense.route
-    )
+    val hideBottomBar = currentDest?.route in listOf(Screen.AddExpense.route)
 
     ExpenseTrackerTheme(
         appTheme     = settingsState.appTheme,
@@ -68,26 +99,44 @@ private fun MainScaffold() {
             bottomBar = {
                 AnimatedVisibility(
                     visible = !hideBottomBar,
-                    enter   = slideInVertically { it },
-                    exit    = slideOutVertically { it }
+                    enter   = slideInVertically { it } + fadeIn(),
+                    exit    = slideOutVertically { it } + fadeOut()
                 ) {
-                    NavigationBar {
-                        bottomNavItems.forEach { (screen, label, icon) ->
+                    NavigationBar(tonalElevation = 0.dp) {   // ← fixed: was dp.times(0)
+                        bottomNavItems.forEach { item ->
+                            val selected = currentDest?.hierarchy?.any {
+                                it.route == item.screen.route
+                            } == true
+
+                            val iconScale by animateFloatAsState(
+                                targetValue   = if (selected) 1.18f else 1f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness    = Spring.StiffnessMedium
+                                ),
+                                label = "nav_scale_${item.label}"
+                            )
+
                             NavigationBarItem(
-                                icon     = { Icon(icon, label) },
-                                label    = { Text(label) },
-                                selected = currentDest?.hierarchy?.any {
-                                    it.route == screen.route
-                                } == true,
+                                selected = selected,
                                 onClick  = {
-                                    navController.navigate(screen.route) {
+                                    navController.navigate(item.screen.route) {
                                         popUpTo(navController.graph.findStartDestination().id) {
                                             saveState = true
                                         }
                                         launchSingleTop = true
                                         restoreState    = true
                                     }
-                                }
+                                },
+                                icon = {
+                                    Icon(
+                                        imageVector        = if (selected) item.selectedIcon else item.unselIcon,
+                                        contentDescription = item.label,
+                                        modifier           = Modifier.scale(iconScale)
+                                    )
+                                },
+                                label           = { Text(item.label) },
+                                alwaysShowLabel = true
                             )
                         }
                     }

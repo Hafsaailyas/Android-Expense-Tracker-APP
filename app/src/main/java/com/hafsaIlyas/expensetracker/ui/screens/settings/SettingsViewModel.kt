@@ -11,6 +11,7 @@ import com.hafsaIlyas.expensetracker.ui.theme.AppTheme
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.util.Calendar
 import javax.inject.Inject
 
 data class SettingsUiState(
@@ -19,6 +20,9 @@ data class SettingsUiState(
     val monthlyBudget: Double = 0.0,
     val budgetInput: String = "",
     val expenseCount: Int = 0,
+    val currentMonthSpent: Double = 0.0,      // sum of current-month expenses for budget bar
+    val budgetAlertsEnabled: Boolean = true,  // Notifications group — Budget alerts toggle
+    val dailyReminderTime: String = "9:00 PM",// Notifications group — Daily reminder value
     val isExporting: Boolean = false,
     val exportResult: ExportResult? = null
 )
@@ -39,21 +43,36 @@ class SettingsViewModel @Inject constructor(
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
     init {
-        // Merge all prefs flows
+        // Compute start/end of the current calendar month once
+        val (monthStart, monthEnd) = run {
+            val cal = Calendar.getInstance()
+            cal.set(Calendar.DAY_OF_MONTH, 1)
+            cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0)
+            cal.set(Calendar.SECOND, 0);      cal.set(Calendar.MILLISECOND, 0)
+            val start = cal.timeInMillis
+            cal.set(Calendar.DAY_OF_MONTH, cal.getActualMaximum(Calendar.DAY_OF_MONTH))
+            cal.set(Calendar.HOUR_OF_DAY, 23); cal.set(Calendar.MINUTE, 59)
+            cal.set(Calendar.SECOND, 59);       cal.set(Calendar.MILLISECOND, 999)
+            start to cal.timeInMillis
+        }
+
         viewModelScope.launch {
             combine(
                 prefsRepo.appTheme,
                 prefsRepo.dynamicColor,
                 prefsRepo.monthlyBudget,
-                expenseRepo.getAllExpenses()
-            ) { theme, dynamic, budget, expenses ->
+                expenseRepo.getAllExpenses(),
+                // Use the repo's existing range query — Expense.date is the correct field name
+                expenseRepo.getTotalSpendingInRange(monthStart, monthEnd)
+            ) { theme, dynamic, budget, expenses, monthTotal ->
                 _uiState.update {
                     it.copy(
-                        appTheme      = theme,
-                        dynamicColor  = dynamic,
-                        monthlyBudget = budget,
-                        budgetInput   = if (budget > 0) "%.0f".format(budget) else "",
-                        expenseCount  = expenses.size
+                        appTheme          = theme,
+                        dynamicColor      = dynamic,
+                        monthlyBudget     = budget,
+                        budgetInput       = if (budget > 0) "%.0f".format(budget) else "",
+                        expenseCount      = expenses.size,
+                        currentMonthSpent = monthTotal ?: 0.0
                     )
                 }
             }.collect()
@@ -125,5 +144,18 @@ class SettingsViewModel @Inject constructor(
 
     fun clearExportResult() {
         _uiState.update { it.copy(exportResult = null) }
+    }
+
+    fun setBudgetAlertsEnabled(enabled: Boolean) = viewModelScope.launch {
+        // Persist via prefsRepo when you add that key; for now update local state
+        _uiState.update { it.copy(budgetAlertsEnabled = enabled) }
+    }
+
+    fun setDailyReminderTime(time: String) = viewModelScope.launch {
+        _uiState.update { it.copy(dailyReminderTime = time) }
+    }
+
+    fun clearAllData() = viewModelScope.launch {
+        expenseRepo.getAllExpenses().first().forEach { expenseRepo.deleteExpense(it) }
     }
 }

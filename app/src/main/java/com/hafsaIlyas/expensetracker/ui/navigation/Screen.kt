@@ -1,6 +1,8 @@
 // app/src/main/java/com/hafsaIlyas/expensetracker/ui/navigation/Screen.kt
 package com.hafsaIlyas.expensetracker.ui.navigation
 
+// No changes — kept identical, splash handled at AppRoot level in MainActivity
+
 sealed class Screen(val route: String) {
     object Dashboard   : Screen("dashboard")
     object AddExpense  : Screen("add_expense?expenseId={expenseId}") {
@@ -9,5 +11,5 @@ sealed class Screen(val route: String) {
     }
     object ExpenseList : Screen("expense_list")
     object AiInsights  : Screen("ai_insights")
-    object Settings    : Screen("settings")      // ← new
+    object Settings    : Screen("settings")
 }

@@ -1,6 +1,8 @@
 // app/src/main/java/com/hafsaIlyas/expensetracker/ui/navigation/NavGraph.kt
 package com.hafsaIlyas.expensetracker.ui.navigation
+
 // ui/navigation/NavGraph.kt
+// Unchanged functionally — splash is handled in MainActivity, not NavGraph
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -18,23 +20,18 @@ import com.hafsaIlyas.expensetracker.ui.screens.settings.SettingsScreen
 
 @Composable
 fun ExpenseNavGraph(
-    navController: NavHostController,
-    modifier: Modifier = Modifier
+    navController    : NavHostController,
+    modifier         : Modifier = Modifier
 ) {
     NavHost(
         navController    = navController,
         startDestination = Screen.Dashboard.route,
         modifier         = modifier
     ) {
-
-        // Dashboard — placeholder until Day 3
-        // ui/navigation/NavGraph.kt  — one-line change: wire DashboardScreen
         composable(Screen.Dashboard.route) {
-            DashboardScreen(navController = navController)  // ← was PlaceholderScreen
+            DashboardScreen(navController = navController)
         }
-// All other routes unchanged from Step 2
 
-        // Add / Edit Expense
         composable(
             route     = Screen.AddExpense.route,
             arguments = listOf(
@@ -47,31 +44,16 @@ fun ExpenseNavGraph(
             AddExpenseScreen(navController = navController)
         }
 
-        // Expense List
         composable(Screen.ExpenseList.route) {
             ExpenseListScreen(navController = navController)
         }
 
-        // AI Insights — placeholder until Day 5
-        // In NavGraph.kt — replace the AI placeholder:
         composable(Screen.AiInsights.route) {
-            AiInsightsScreen(navController = navController)  // ← was PlaceholderScreen
+            AiInsightsScreen(navController = navController)
         }
+
         composable(Screen.Settings.route) {
             SettingsScreen(navController = navController)
         }
-    }
-}
-
-@Composable
-private fun PlaceholderScreen(label: String) {
-    androidx.compose.foundation.layout.Box(
-        modifier            = androidx.compose.ui.Modifier.fillMaxSize(),
-        contentAlignment    = androidx.compose.ui.Alignment.Center
-    ) {
-        androidx.compose.material3.Text(
-            text  = label,
-            style = androidx.compose.material3.MaterialTheme.typography.bodyLarge
-        )
     }
 }
