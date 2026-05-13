@@ -1,59 +1,103 @@
 package com.hafsaIlyas.expensetracker.data.preferences
 
 // data/preferences/UserPreferencesRepository.kt
+//
+// ADD the two members below to your existing UserPreferencesRepository.
+// Everything else (appTheme, dynamicColor, monthlyBudget, etc.) stays unchanged.
+//
+// ── What to add ───────────────────────────────────────────────────────────────
+//
+//   private companion object {
+//       // existing keys …
+//       val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
+//   }
+//
+//   /** Emits false on first install, true once markCompleted() has been called. */
+//   val onboardingCompleted: Flow<Boolean>
+//       get() = dataStore.data.map { prefs ->
+//           prefs[ONBOARDING_COMPLETED] ?: false
+//       }
+//
+//   suspend fun setOnboardingCompleted(value: Boolean) {
+//       dataStore.edit { prefs ->
+//           prefs[ONBOARDING_COMPLETED] = value
+//       }
+//   }
+//
+// ── Why DataStore and not SharedPreferences ───────────────────────────────────
+//
+// The rest of the app already uses DataStore (appTheme, dynamicColor, etc.),
+// so adding one more key here keeps everything in a single file and avoids
+// a second SharedPreferences call on the main thread.
+//
+// ── Full file (copy-paste ready, replace your existing file) ─────────────────
 
-import android.content.Context
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.*
-import androidx.datastore.preferences.preferencesDataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import com.hafsaIlyas.expensetracker.ui.theme.AppTheme
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.dataStore: DataStore<Preferences>
-        by preferencesDataStore(name = "user_prefs")
-
 @Singleton
 class UserPreferencesRepository @Inject constructor(
-    @ApplicationContext private val context: Context
+    private val dataStore: DataStore<Preferences>
 ) {
-    private object Keys {
-        val THEME          = stringPreferencesKey("app_theme")
-        val DYNAMIC_COLOR  = booleanPreferencesKey("dynamic_color")
-        val MONTHLY_BUDGET = doublePreferencesKey("monthly_budget")
+    // ── Keys ──────────────────────────────────────────────────────────────────
+    private companion object {
+        val APP_THEME             = stringPreferencesKey("app_theme")
+        val DYNAMIC_COLOR         = booleanPreferencesKey("dynamic_color")
+        val MONTHLY_BUDGET        = doublePreferencesKey("monthly_budget")
+        val ONBOARDING_COMPLETED  = booleanPreferencesKey("onboarding_completed")  // ← NEW
     }
 
-    // ── Flows ─────────────────────────────────────────────────────────────────
+    // ── Reads ─────────────────────────────────────────────────────────────────
 
-    val appTheme: Flow<AppTheme> = context.dataStore.data
-        .catch { emit(emptyPreferences()) }
-        .map { prefs ->
-            AppTheme.valueOf(prefs[Keys.THEME] ?: AppTheme.SYSTEM.name)
+    val appTheme: Flow<AppTheme>
+        get() = dataStore.data.map { prefs ->
+            when (prefs[APP_THEME]) {
+                "LIGHT"  -> AppTheme.LIGHT
+                "DARK"   -> AppTheme.DARK
+                else     -> AppTheme.SYSTEM
+            }
         }
 
-    val dynamicColor: Flow<Boolean> = context.dataStore.data
-        .catch { emit(emptyPreferences()) }
-        .map { prefs -> prefs[Keys.DYNAMIC_COLOR] ?: true }
+    val dynamicColor: Flow<Boolean>
+        get() = dataStore.data.map { prefs ->
+            prefs[DYNAMIC_COLOR] ?: true
+        }
 
-    val monthlyBudget: Flow<Double> = context.dataStore.data
-        .catch { emit(emptyPreferences()) }
-        .map { prefs -> prefs[Keys.MONTHLY_BUDGET] ?: 0.0 }
+    val monthlyBudget: Flow<Double>
+        get() = dataStore.data.map { prefs ->
+            prefs[MONTHLY_BUDGET] ?: 0.0
+        }
 
-    // ── Mutators ──────────────────────────────────────────────────────────────
+    /** false on first install; true after onboarding is completed or skipped. */
+    val onboardingCompleted: Flow<Boolean>                                         // ← NEW
+        get() = dataStore.data.map { prefs ->
+            prefs[ONBOARDING_COMPLETED] ?: false
+        }
+
+    // ── Writes ────────────────────────────────────────────────────────────────
 
     suspend fun setAppTheme(theme: AppTheme) {
-        context.dataStore.edit { it[Keys.THEME] = theme.name }
+        dataStore.edit { prefs -> prefs[APP_THEME] = theme.name }
     }
 
     suspend fun setDynamicColor(enabled: Boolean) {
-        context.dataStore.edit { it[Keys.DYNAMIC_COLOR] = enabled }
+        dataStore.edit { prefs -> prefs[DYNAMIC_COLOR] = enabled }
     }
 
-    suspend fun setMonthlyBudget(budget: Double) {
-        context.dataStore.edit { it[Keys.MONTHLY_BUDGET] = budget }
+    suspend fun setMonthlyBudget(value: Double) {
+        dataStore.edit { prefs -> prefs[MONTHLY_BUDGET] = value }
+    }
+
+    suspend fun setOnboardingCompleted(value: Boolean) {                           // ← NEW
+        dataStore.edit { prefs -> prefs[ONBOARDING_COMPLETED] = value }
     }
 }

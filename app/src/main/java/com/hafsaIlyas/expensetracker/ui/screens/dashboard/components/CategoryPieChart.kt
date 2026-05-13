@@ -1,7 +1,11 @@
 package com.hafsaIlyas.expensetracker.ui.screens.dashboard.components
 
 // ui/screens/dashboard/components/CategoryPieChart.kt
-// Smooth donut chart with spring animation, gap spacing, and optional center label
+// Redesigned to match HTML donut chart exactly:
+//   • Arcs use the exact 5-color palette from the HTML (0xFF1A5F7A, 0xFF2C7865, etc.)
+//   • strokeWidth 18dp, 3° gap between segments, round caps
+//   • Center label: formatted total amount on one line (mirrors HTML <text> element)
+//   • Spring entry animation from 0 → 1
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
@@ -22,11 +26,11 @@ import com.hafsaIlyas.expensetracker.ui.screens.dashboard.CategoryShare
 
 @Composable
 fun CategoryDonutChart(
-    categories   : List<CategoryShare>,
-    modifier     : Modifier = Modifier,
-    size         : Dp       = 200.dp,
-    strokeWidth  : Dp       = 28.dp,
-    centerLabel  : String   = ""
+    categories  : List<CategoryShare>,
+    modifier    : Modifier = Modifier,
+    size        : Dp       = 100.dp,
+    strokeWidth : Dp       = 18.dp,
+    centerLabel : String   = ""
 ) {
     val animProgress = remember { Animatable(0f) }
     LaunchedEffect(categories) {
@@ -40,48 +44,38 @@ fun CategoryDonutChart(
         )
     }
 
-    val progress    = animProgress.value
-    val gapDegrees  = 3f
-    val totalGap    = gapDegrees * categories.size
-    val trackColor  = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
+    val progress   = animProgress.value
+    val gapDegrees = 3f
+    val totalGap   = gapDegrees * categories.size.coerceAtLeast(1)
+    val trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
 
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+    Box(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
+
         Canvas(modifier = Modifier.size(size)) {
             val strokePx = strokeWidth.toPx()
             val diameter = minOf(this.size.width, this.size.height) - strokePx
             val topLeft  = Offset(
-                (this.size.width - diameter) / 2f,
+                (this.size.width  - diameter) / 2f,
                 (this.size.height - diameter) / 2f
             )
             val arcSize  = Size(diameter, diameter)
+            val stroke   = Stroke(width = strokePx, cap = StrokeCap.Round)
 
-            // Background track (only when data exists)
-            if (categories.isNotEmpty()) {
-                drawArc(
-                    color      = trackColor,
-                    startAngle = -90f,
-                    sweepAngle = 360f,
-                    useCenter  = false,
-                    topLeft    = topLeft,
-                    size       = arcSize,
-                    style      = Stroke(width = strokePx)
-                )
-            } else {
-                drawArc(
-                    color      = trackColor,
-                    startAngle = -90f,
-                    sweepAngle = 360f,
-                    useCenter  = false,
-                    topLeft    = topLeft,
-                    size       = arcSize,
-                    style      = Stroke(width = strokePx)
-                )
-            }
+            // Background track
+            drawArc(
+                color      = trackColor,
+                startAngle = -90f,
+                sweepAngle = 360f,
+                useCenter  = false,
+                topLeft    = topLeft,
+                size       = arcSize,
+                style      = Stroke(width = strokePx)
+            )
 
+            // Segments
             var startAngle = -90f
             categories.forEach { share ->
                 val sweep = (share.percentage / 100f) * (360f - totalGap) * progress
-
                 drawArc(
                     color      = Color(share.color),
                     startAngle = startAngle,
@@ -89,24 +83,19 @@ fun CategoryDonutChart(
                     useCenter  = false,
                     topLeft    = topLeft,
                     size       = arcSize,
-                    style      = Stroke(width = strokePx, cap = StrokeCap.Round)
+                    style      = stroke
                 )
                 startAngle += sweep + gapDegrees
             }
         }
 
-        // Center label
+        // Center label — matches HTML <text> element inside the SVG
         if (centerLabel.isNotBlank()) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text  = "Total",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
-                )
-                Text(
                     text       = centerLabel,
-                    style      = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.ExtraBold,
+                    style      = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight(700),
                     color      = MaterialTheme.colorScheme.onSurface
                 )
             }

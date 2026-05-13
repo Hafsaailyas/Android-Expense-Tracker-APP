@@ -1,7 +1,11 @@
 package com.hafsaIlyas.expensetracker.ui.screens.dashboard.components
 
 // ui/screens/dashboard/components/CategoryBarChart.kt
-// Polished animated bar chart with gradient bars, amount labels, and spring entry
+// Redesigned to match HTML bar-chart aesthetic:
+//   • Each row: category name left, amount + % badge right (matching HTML legend-item layout)
+//   • Track: 8dp height, outlineVariant 35% alpha
+//   • Fill: horizontal gradient from barColor 75% → barColor 100%, spring animation
+//   • % badge: small rounded pill, barColor tinted bg
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -16,14 +20,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.hafsaIlyas.expensetracker.ui.screens.dashboard.CategoryShare
 import java.text.NumberFormat
 import java.util.Locale
 
 @Composable
 fun CategoryBarChart(
-    categories : List<CategoryShare>,
-    modifier   : Modifier = Modifier
+    categories: List<CategoryShare>,
+    modifier  : Modifier = Modifier
 ) {
     val animProgress = remember { Animatable(0f) }
     LaunchedEffect(categories) {
@@ -34,22 +39,17 @@ fun CategoryBarChart(
         )
     }
 
-    val progress  = animProgress.value
     val formatter = NumberFormat.getCurrencyInstance(Locale.US)
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
         categories.forEach { share ->
-            CategoryBarRow(
-                share     = share,
-                progress  = progress,
-                formatter = formatter
-            )
+            BarRow(share = share, progress = animProgress.value, formatter = formatter)
         }
     }
 }
 
 @Composable
-private fun CategoryBarRow(
+private fun BarRow(
     share    : CategoryShare,
     progress : Float,
     formatter: NumberFormat
@@ -57,15 +57,17 @@ private fun CategoryBarRow(
     val barColor = Color(share.color)
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+
+        // Header row: category name left · amount + % badge right
         Row(
             modifier              = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment     = Alignment.CenterVertically
         ) {
-            // Category emoji + name
+            // Emoji + name
             Text(
                 text       = share.category,
-                style      = MaterialTheme.typography.bodyMedium,
+                style      = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Medium,
                 color      = MaterialTheme.colorScheme.onSurface
             )
@@ -74,19 +76,21 @@ private fun CategoryBarRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment     = Alignment.CenterVertically
             ) {
+                // Amount in bar color
                 Text(
                     text       = formatter.format(share.amount),
-                    style      = MaterialTheme.typography.bodyMedium,
+                    style      = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color      = barColor
                 )
+                // % pill badge
                 Surface(
                     shape = RoundedCornerShape(4.dp),
                     color = barColor.copy(alpha = 0.12f)
                 ) {
                     Text(
                         text     = "${share.percentage.toInt()}%",
-                        style    = MaterialTheme.typography.labelSmall,
+                        style    = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                         color    = barColor,
                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                     )
@@ -94,20 +98,19 @@ private fun CategoryBarRow(
             }
         }
 
-        // Track
+        // Track + animated fill
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(9.dp)
-                .clip(RoundedCornerShape(5.dp))
+                .height(8.dp)
+                .clip(RoundedCornerShape(4.dp))
                 .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
         ) {
-            // Gradient progress bar
             Box(
                 modifier = Modifier
                     .fillMaxWidth(fraction = (share.percentage / 100f) * progress)
                     .fillMaxHeight()
-                    .clip(RoundedCornerShape(5.dp))
+                    .clip(RoundedCornerShape(4.dp))
                     .background(
                         Brush.horizontalGradient(
                             colors = listOf(barColor.copy(alpha = 0.75f), barColor)

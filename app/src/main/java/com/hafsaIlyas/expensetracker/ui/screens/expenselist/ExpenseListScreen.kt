@@ -1,17 +1,31 @@
 package com.hafsaIlyas.expensetracker.ui.screens.expenselist
 
 // ui/screens/expenselist/ExpenseListScreen.kt
-// Modern expense list — skeleton loading, colorful swipe-delete, polished empty states,
-// animated search bar, staggered card entry
+// Redesigned to match HTML "History" screen exactly:
+//   • Large "History" heading + white search bar with search icon
+//   • Horizontal category filter chips (All, Food, Transport, …)
+//   • Expense cards: 44dp icon tile + name/category text + right-aligned amount/date
+//   • Swipe-to-delete with red background + trash icon, then in-list undo snackbar
+//   • Sticky footer bar: "N expenses · month" on left, total amount on right
+//   • Full dark / light mode via MaterialTheme tokens
+//   • Staggered card entry animation
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.material3.SwipeToDismissBoxValue.EndToStart
 import androidx.compose.runtime.*
@@ -19,13 +33,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.hafsaIlyas.expensetracker.data.local.entity.Expense
@@ -36,33 +50,56 @@ import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
 
-private val CATEGORIES = listOf(
-    "🍔 Food", "🚌 Transport", "🏠 Rent", "🛍️ Shopping",
-    "💊 Health", "🎮 Entertainment", "📚 Education",
-    "⚡ Utilities", "✈️ Travel", "📦 Other"
+// ── Category filter options (mirror HTML chips) ───────────────────────────────
+
+private val FILTER_CATEGORIES = listOf(
+    "All",
+    "🍔 Food",
+    "🚕 Transport",
+    "🛒 Shopping",
+    "💊 Health",
+    "🎮 Fun",
+    "✈️ Travel",
+    "🏠 Home",
+    "📚 Education",
+    "💡 Bills",
+    "🎁 Gifts",
+    "🐾 Pets",
+    "➕ Other"
 )
+
+// ── Screen ────────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExpenseListScreen(
-    navController : NavController,
-    viewModel     : ExpenseViewModel = hiltViewModel()
+    navController: NavController,
+    viewModel: ExpenseViewModel = hiltViewModel()
 ) {
-    val uiState       by viewModel.listUiState.collectAsState()
+    val uiState by viewModel.listUiState.collectAsState()
     val pendingDelete by viewModel.pendingDeletion.collectAsState()
-    val snackbarHost  = remember { SnackbarHostState() }
+
+    // Month label for footer
+    val monthLabel = remember {
+        SimpleDateFormat("MMM yyyy", Locale.getDefault()).format(Date())
+    }
+
+    // Currency formatter
+    val currencyFmt = remember { NumberFormat.getCurrencyInstance(Locale.US) }
 
     DisposableEffect(Unit) {
         onDispose { viewModel.commitPendingDelete() }
     }
 
+    // Handle undo via snackbar (standard M3 snackbar host kept for accessibility)
+    val snackbarHost = remember { SnackbarHostState() }
     LaunchedEffect(pendingDelete) {
         if (pendingDelete != null) {
-            val category = pendingDelete!!.category.drop(2).trim()
+            val label = pendingDelete!!.category.drop(2).trim()
             val result = snackbarHost.showSnackbar(
-                message     = "$category expense removed",
-                actionLabel = "Undo",
-                duration    = SnackbarDuration.Short
+                message = "$label expense deleted",
+                actionLabel = "UNDO",
+                duration = SnackbarDuration.Short
             )
             if (result == SnackbarResult.ActionPerformed) viewModel.undoDelete()
             else viewModel.commitPendingDelete()
@@ -70,216 +107,303 @@ fun ExpenseListScreen(
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(hostState = snackbarHost) },
-        containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHost) { data ->
+            // Dark pill snackbar matching HTML .undo-snackbar
+            Surface(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.inverseSurface,
+                tonalElevation = 4.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        data.visuals.message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.inverseOnSurface
+                    )
+                    data.visuals.actionLabel?.let { label ->
+                        TextButton(onClick = { data.performAction() }) {
+                            Text(
+                                label,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFFF9D56E) // gold accent
+                            )
+                        }
+                    }
+                }
+            }
+        }},
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick           = { navController.navigate(Screen.AddExpense.createRoute()) },
-                icon              = { Icon(Icons.Default.Add, "Add") },
-                text              = { Text("Add Expense") },
-                containerColor    = MaterialTheme.colorScheme.primary,
-                contentColor      = MaterialTheme.colorScheme.onPrimary,
-                expanded          = true
-            )
-        }
+            FloatingActionButton(
+                onClick = { navController.navigate(Screen.AddExpense.createRoute()) },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add Expense")
+            }
+        },
+        containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // ── Top header with search + filters ──────────────────────────────
+
+            // ── Top header ────────────────────────────────────────────────────
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.background)
-                    .padding(horizontal = 16.dp)
-                    .padding(top = 16.dp, bottom = 8.dp),
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 16.dp, bottom = 0.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Row(
-                    modifier              = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment     = Alignment.Bottom
-                ) {
-                    Column {
-                        Text(
-                            "Expenses",
-                            style      = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        Text(
-                            "${uiState.filteredExpenses.size} of ${uiState.allExpenses.size} entries",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                // ── Search bar ────────────────────────────────────────────────
-                OutlinedTextField(
-                    value         = uiState.searchQuery,
-                    onValueChange = viewModel::onSearchQueryChange,
-                    modifier      = Modifier.fillMaxWidth(),
-                    placeholder   = {
-                        Text(
-                            "Search expenses…",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                        )
-                    },
-                    leadingIcon  = {
-                        Icon(
-                            Icons.Default.Search, null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    trailingIcon = {
-                        AnimatedVisibility(
-                            visible = uiState.searchQuery.isNotEmpty(),
-                            enter   = scaleIn() + fadeIn(),
-                            exit    = scaleOut() + fadeOut()
-                        ) {
-                            IconButton(onClick = { viewModel.onSearchQueryChange("") }) {
-                                Icon(Icons.Default.Close, "Clear search")
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    shape      = RoundedCornerShape(14.dp),
-                    colors     = OutlinedTextFieldDefaults.colors(
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                        focusedBorderColor   = MaterialTheme.colorScheme.primary
-                    )
+                // "History" heading
+                Text(
+                    "History",
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight(800),
+                    letterSpacing = (-0.8).sp,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
-                // ── Category filter chips ─────────────────────────────────────
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding        = PaddingValues(end = 8.dp)
-                ) {
-                    item {
-                        FilterChip(
-                            selected = uiState.selectedCategory.isEmpty(),
-                            onClick  = { viewModel.onListCategoryFilterChange("") },
-                            label    = { Text("All") }
-                        )
-                    }
-                    items(CATEGORIES) { cat ->
-                        FilterChip(
-                            selected = uiState.selectedCategory == cat,
-                            onClick  = { viewModel.onListCategoryFilterChange(cat) },
-                            label    = { Text(cat) }
-                        )
-                    }
+                // Search bar — white card with magnifier icon
+                SearchBar(
+                    query = uiState.searchQuery,
+                    onQueryChange = viewModel::onSearchQueryChange
+                )
+            }
+
+            // ── Category filter chips ─────────────────────────────────────────
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp, bottom = 4.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(FILTER_CATEGORIES) { chip ->
+                    val isAll = chip == "All"
+                    val isSelected = if (isAll) uiState.selectedCategory.isEmpty()
+                    else uiState.selectedCategory == chip
+
+                    CategoryFilterChip(
+                        label = chip,
+                        selected = isSelected,
+                        onClick = {
+                            viewModel.onListCategoryFilterChange(if (isAll) "" else chip)
+                        }
+                    )
                 }
             }
 
             // ── Body ──────────────────────────────────────────────────────────
-            when {
-                uiState.isLoading -> ExpenseListSkeleton()
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                when {
+                    uiState.isLoading -> ExpenseListSkeleton()
 
-                uiState.filteredExpenses.isEmpty() -> EmptyState(
-                    isFiltered = uiState.searchQuery.isNotEmpty() || uiState.selectedCategory.isNotEmpty(),
-                    modifier   = Modifier.fillMaxSize()
-                )
+                    uiState.filteredExpenses.isEmpty() -> EmptyState(
+                        isFiltered = uiState.searchQuery.isNotEmpty() ||
+                                uiState.selectedCategory.isNotEmpty(),
+                        modifier = Modifier.fillMaxSize()
+                    )
 
-                else -> ExpenseList(
-                    expenses = uiState.filteredExpenses,
-                    onDelete = viewModel::requestDelete
-                )
+                    else -> ExpenseList(
+                        expenses = uiState.filteredExpenses,
+                        onDelete = viewModel::requestDelete
+                    )
+                }
+            }
+
+            // ── Sticky footer ─────────────────────────────────────────────────
+            // Matches HTML .list-footer
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 2.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 14.dp)
+                        .navigationBarsPadding(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "${uiState.filteredExpenses.size} expenses · $monthLabel",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        currencyFmt.format(uiState.totalSpending),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight(800),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
     }
 }
 
-// ── Empty state with illustration ─────────────────────────────────────────────
+// ── Search bar ────────────────────────────────────────────────────────────────
+// Matches HTML .search-bar: white rounded container, search icon + grey placeholder
 
 @Composable
-private fun EmptyState(isFiltered: Boolean, modifier: Modifier = Modifier) {
-    Column(
-        modifier            = modifier.padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
+private fun SearchBar(query: String, onQueryChange: (String) -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(
+            0.5.dp, MaterialTheme.colorScheme.outlineVariant
+        ),
+        tonalElevation = 1.dp
     ) {
-        // Illustrated icon container
-        Surface(
-            modifier = Modifier.size(96.dp),
-            shape    = RoundedCornerShape(28.dp),
-            color    = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector        = if (isFiltered) Icons.Default.SearchOff else Icons.Default.Receipt,
-                    contentDescription = null,
-                    modifier           = Modifier.size(48.dp),
-                    tint               = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+            Icon(
+                Icons.Default.Search, null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier.size(18.dp)
+            )
+
+            Box(modifier = Modifier.weight(1f)) {
+                androidx.compose.foundation.text.BasicTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier.fillMaxWidth()
                 )
+                if (query.isEmpty()) {
+                    Text(
+                        "Search expenses…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                }
+            }
+
+            AnimatedVisibility(
+                visible = query.isNotEmpty(),
+                enter = scaleIn(spring(Spring.DampingRatioMediumBouncy)) + fadeIn(),
+                exit = scaleOut() + fadeOut()
+            ) {
+                IconButton(
+                    onClick = { onQueryChange("") },
+                    modifier = Modifier.size(20.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Close, "Clear",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
-
-        Spacer(Modifier.height(24.dp))
-
-        Text(
-            text       = if (isFiltered) "No results found" else "No expenses yet!",
-            style      = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            textAlign  = TextAlign.Center
-        )
-
-        Spacer(Modifier.height(8.dp))
-
-        Text(
-            text      = if (isFiltered)
-                "Try adjusting your search or clearing the filters."
-            else
-                "Tap the button below to add your very first expense.",
-            style     = MaterialTheme.typography.bodyMedium,
-            color     = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier  = Modifier.padding(horizontal = 24.dp)
-        )
     }
 }
 
-// ── Expense list with staggered animation ─────────────────────────────────────
+// ── Category filter chip ──────────────────────────────────────────────────────
+// Matches HTML .filter-chip / .filter-chip.active
+
+@Composable
+private fun CategoryFilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(20.dp),
+        color = if (selected) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(
+            0.5.dp,
+            if (selected) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.outlineVariant
+        ),
+        modifier = Modifier.height(32.dp)
+    ) {
+        Box(
+            modifier = Modifier.padding(horizontal = 14.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+                color = if (selected) MaterialTheme.colorScheme.onPrimary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+// ── Expense list ──────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ExpenseList(
-    expenses : List<Expense>,
-    onDelete : (Expense) -> Unit,
-    modifier : Modifier = Modifier
+    expenses: List<Expense>,
+    onDelete: (Expense) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     LazyColumn(
-        modifier            = modifier.fillMaxSize(),
-        contentPadding      = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         itemsIndexed(expenses, key = { _, e -> e.id }) { idx, expense ->
             StaggeredSwipeCard(index = idx, expense = expense, onDelete = { onDelete(expense) })
         }
-        item { Spacer(Modifier.height(88.dp)) }
+        // Extra space for FAB
+        item { Spacer(Modifier.height(80.dp)) }
     }
 }
+
+// ── Staggered entry + swipe wrapper ──────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StaggeredSwipeCard(index: Int, expense: Expense, onDelete: () -> Unit) {
-    // Staggered entry
     val visible = remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(index * 60L)
+        kotlinx.coroutines.delay(index * 55L)
         visible.value = true
     }
     val alpha by animateFloatAsState(
         if (visible.value) 1f else 0f,
-        tween(300),
-        label = "card_alpha_$index"
+        tween(280),
+        label = "alpha_$index"
     )
     val offsetY by animateFloatAsState(
-        if (visible.value) 0f else 16f,
-        tween(300, easing = EaseOutCubic),
-        label = "card_y_$index"
+        if (visible.value) 0f else 14f,
+        tween(280, easing = EaseOutCubic),
+        label = "offsetY_$index"
     )
 
     Box(
@@ -291,6 +415,9 @@ private fun StaggeredSwipeCard(index: Int, expense: Expense, onDelete: () -> Uni
     }
 }
 
+// ── Swipe-to-dismiss expense card ─────────────────────────────────────────────
+// Red background + trash icon revealed on swipe-left, matching HTML swipe-bg
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SwipeToDismissExpenseCard(expense: Expense, onDelete: () -> Unit) {
@@ -299,45 +426,26 @@ private fun SwipeToDismissExpenseCard(expense: Expense, onDelete: () -> Unit) {
     )
 
     SwipeToDismissBox(
-        state                       = dismissState,
+        state = dismissState,
         enableDismissFromStartToEnd = false,
-        backgroundContent           = {
-            // Colorful swipe background
+        backgroundContent = {
             val progress = dismissState.progress
-            val bgAlpha  = (progress * 2f).coerceIn(0f, 1f)
+            val bgAlpha = (progress * 2.5f).coerceIn(0f, 1f)
 
             Box(
                 Modifier
                     .fillMaxSize()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(
-                        Brush.horizontalGradient(
-                            colors = listOf(
-                                Color(0xFFFF5252).copy(alpha = bgAlpha * 0.1f),
-                                Color(0xFFFF1744).copy(alpha = bgAlpha * 0.9f)
-                            ),
-                            startX = Float.POSITIVE_INFINITY,
-                            endX   = 0f
-                        )
-                    ),
+                    .background(Color(0xFFC62828).copy(alpha = bgAlpha)),
                 contentAlignment = Alignment.CenterEnd
             ) {
-                Column(
-                    modifier            = Modifier.padding(end = 24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Delete, "Delete",
-                        tint     = Color.White,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Text(
-                        "Delete",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White
-                    )
-                }
+                Icon(
+                    Icons.Default.Delete, "Delete",
+                    tint = Color.White.copy(alpha = bgAlpha),
+                    modifier = Modifier
+                        .padding(end = 22.dp)
+                        .size(22.dp)
+                )
             }
         }
     ) {
@@ -345,69 +453,160 @@ private fun SwipeToDismissExpenseCard(expense: Expense, onDelete: () -> Unit) {
     }
 }
 
-@Composable
-private fun ExpenseCard(expense: Expense) {
-    val formatter = NumberFormat.getCurrencyInstance(Locale.US)
-    val dateStr   = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date(expense.date))
+// ── Expense card ──────────────────────────────────────────────────────────────
+// Matches HTML .expense-card: white surface, 44dp icon tile, name+category, right amount+date
 
-    Card(
-        modifier  = Modifier.fillMaxWidth(),
-        shape     = RoundedCornerShape(16.dp),
-        colors    = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+@Composable
+private fun ExpenseCard(expense: Expense, modifier: Modifier = Modifier) {
+    val currencyFmt = remember { NumberFormat.getCurrencyInstance(Locale.US) }
+    val dateStr = remember(expense.date) {
+        val today = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
+        val yesterday = today - 86_400_000L
+        when {
+            expense.date >= today -> "Today"
+            expense.date >= yesterday -> "Yesterday"
+            else -> SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(expense.date))
+        }
+    }
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(
+            0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
         ),
-        elevation = CardDefaults.cardElevation(0.dp)
+        tonalElevation = 0.dp
     ) {
         Row(
-            modifier              = Modifier
+            modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment     = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .padding(horizontal = 14.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Emoji icon
-            Surface(
-                shape    = RoundedCornerShape(12.dp),
-                color    = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
-                modifier = Modifier.size(46.dp)
+            // Icon tile — 44dp, rounded 14dp, tinted bg
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(categoryBgColor(expense.category)),
+                contentAlignment = Alignment.Center
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(expense.category.take(2), style = MaterialTheme.typography.titleMedium)
-                }
+                Text(
+                    expense.category.take(2),
+                    fontSize = 22.sp
+                )
             }
 
-            Spacer(Modifier.width(14.dp))
-
-            Column(Modifier.weight(1f)) {
+            // Name + category label
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
                 Text(
-                    expense.category.drop(2).trim(),
-                    style      = MaterialTheme.typography.titleSmall,
+                    text = expense.note.ifBlank { expense.category.drop(2).trim() },
+                    style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines   = 1,
-                    overflow   = TextOverflow.Ellipsis
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
-                if (expense.note.isNotBlank()) {
-                    Text(
-                        expense.note,
-                        style    = MaterialTheme.typography.bodySmall,
-                        color    = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
                 Text(
-                    dateStr,
+                    text = expense.category.drop(2).trim(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+
+            // Amount + date (right-aligned)
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = currencyFmt.format(expense.amount),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight(800),
+                    color = Color(0xFFC62828), // danger red matching HTML .exp-amt
+                    fontSize = 16.sp
+                )
+                Text(
+                    text = dateStr,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
             }
-
-            Text(
-                formatter.format(expense.amount),
-                style      = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.ExtraBold,
-                color      = MaterialTheme.colorScheme.primary
-            )
         }
+    }
+}
+
+// ── Category background color mapping ────────────────────────────────────────
+// Matches the pastel backgrounds from the HTML (.exp-icon style="background:#EEF6FA" etc.)
+
+@Composable
+private fun categoryBgColor(category: String): Color {
+    return when {
+        category.startsWith("🍔") -> Color(0xFFEEF6FA)
+        category.startsWith("🚕") || category.startsWith("🚌") -> Color(0xFFE8F5E9)
+        category.startsWith("🛒") || category.startsWith("🛍️") -> Color(0xFFFFF8E1)
+        category.startsWith("💊") -> Color(0xFFFDE8E8)
+        category.startsWith("🎮") -> Color(0xFFEDE8FD)
+        category.startsWith("✈️") -> Color(0xFFE8F0FD)
+        category.startsWith("🏠") -> Color(0xFFFFF3E0)
+        category.startsWith("📚") -> Color(0xFFE8F5E9)
+        category.startsWith("💡") -> Color(0xFFFFFDE7)
+        category.startsWith("🎁") -> Color(0xFFFCE4EC)
+        category.startsWith("🐾") -> Color(0xFFF3E5F5)
+        else -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+    }
+}
+
+// ── Empty state ───────────────────────────────────────────────────────────────
+
+@Composable
+private fun EmptyState(isFiltered: Boolean, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+            modifier = Modifier.size(96.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    if (isFiltered) Icons.Default.Search else Icons.Default.Receipt,
+                    contentDescription = null,
+                    modifier = Modifier.size(44.dp),
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                )
+            }
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        Text(
+            text = if (isFiltered) "No results found" else "No expenses yet!",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        Text(
+            text = if (isFiltered)
+                "Try adjusting your search or clearing filters."
+            else
+                "Tap the + button to add your first expense.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 24.dp)
+        )
     }
 }

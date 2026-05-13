@@ -1,6 +1,19 @@
 package com.hafsaIlyas.expensetracker
 
 // MainActivity.kt
+//
+// App flow:
+//   First install  → SplashScreen → OnboardingScreen → MainScaffold
+//   Later launches → SplashScreen → MainScaffold
+//
+// How it works:
+//   1. SplashScreen runs its own timed animation then calls onSplashComplete().
+//   2. AppRoot then reads OnboardingViewModel.onboardingCompleted (DataStore).
+//      While it's null (still loading from disk) we show nothing — the splash
+//      has already exited so the transition is instant in practice.
+//   3. false → show OnboardingScreen; true → show MainScaffold directly.
+//   4. OnboardingScreen calls onFinished() which triggers markCompleted() and
+//      advances the state so the main scaffold appears.
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -8,6 +21,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -25,7 +40,10 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.hafsaIlyas.expensetracker.ui.navigation.ExpenseNavGraph
 import com.hafsaIlyas.expensetracker.ui.navigation.Screen
+import com.hafsaIlyas.expensetracker.ui.screens.onboarding.OnboardingScreen
+import com.hafsaIlyas.expensetracker.ui.screens.onboarding.OnboardingViewModel
 import com.hafsaIlyas.expensetracker.ui.screens.settings.SettingsViewModel
+import com.hafsaIlyas.expensetracker.ui.screens.splash.SplashScreen
 import com.hafsaIlyas.expensetracker.ui.theme.ExpenseTrackerTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -43,23 +61,71 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// ── Root — splash → main flow ─────────────────────────────────────────────────
+// ── App root ──────────────────────────────────────────────────────────────────
+//
+// State machine:
+//   AppState.Splash       → show SplashScreen
+//   AppState.Onboarding   → show OnboardingScreen  (first launch only)
+//   AppState.Main         → show MainScaffold
+
+private sealed class AppState {
+    object Splash     : AppState()
+    object Onboarding : AppState()
+    object Main       : AppState()
+}
 
 @Composable
 private fun AppRoot() {
-    var splashDone by remember { mutableStateOf(false) }
+    val onboardingVm  = hiltViewModel<OnboardingViewModel>()
+    val onboardingDone by onboardingVm.onboardingCompleted.collectAsState()
+
+    // Start in Splash; once splash finishes we advance based on the flag
+    var appState by remember { mutableStateOf<AppState>(AppState.Splash) }
+
+    // Called when SplashScreen's exit animation completes
+    val onSplashComplete: () -> Unit = {
+        // onboardingDone: null = loading, false = show onboarding, true = go to main
+        appState = when (onboardingDone) {
+            true  -> AppState.Main
+            false -> AppState.Onboarding
+            null  -> AppState.Main   // DataStore loaded before splash ends in practice;
+            // fall back to Main to avoid a blank screen
+        }
+    }
+
+    // If onboardingDone loads *after* splash already completed (rare, disk lag),
+    // keep the transition correct:
+    LaunchedEffect(onboardingDone, appState) {
+        if (appState == AppState.Main && onboardingDone == false) {
+            // Splash already done but flag says first launch — show onboarding
+            appState = AppState.Onboarding
+        }
+    }
 
     AnimatedContent(
-        targetState  = splashDone,
-        label        = "splash_to_main",
-        transitionSpec = { fadeIn(tween(400)) togetherWith fadeOut(tween(300)) }
-    ) { ready ->
-        if (!ready) {
-            com.hafsaIlyas.expensetracker.ui.screens.splash.SplashScreen(
-                onSplashComplete = { splashDone = true }
-            )
-        } else {
-            MainScaffold()
+        targetState   = appState,
+        label         = "app_root_transition",
+        transitionSpec = {
+            fadeIn(tween(400)) togetherWith fadeOut(tween(300))
+        }
+    ) { state ->
+        when (state) {
+            AppState.Splash -> {
+                SplashScreen(onSplashComplete = onSplashComplete)
+            }
+
+            AppState.Onboarding -> {
+                OnboardingScreen(
+                    onFinished = {
+                        onboardingVm.markCompleted()
+                        appState = AppState.Main
+                    }
+                )
+            }
+
+            AppState.Main -> {
+                MainScaffold()
+            }
         }
     }
 }
@@ -83,10 +149,10 @@ private fun MainScaffold() {
     val settingsState by settingsVm.uiState.collectAsState()
 
     val bottomNavItems = listOf(
-        BottomNavItem(Screen.Dashboard,   "Dashboard", Icons.Filled.Home,        Icons.Outlined.Home),
-        BottomNavItem(Screen.ExpenseList, "History",   Icons.Filled.Receipt,      Icons.Outlined.Receipt),
-        BottomNavItem(Screen.AiInsights,  "AI",        Icons.Filled.AutoAwesome,  Icons.Outlined.AutoAwesome),
-        BottomNavItem(Screen.Settings,    "Settings",  Icons.Filled.Settings,     Icons.Outlined.Settings),
+        BottomNavItem(Screen.Dashboard,   "Dashboard", Icons.Filled.Home,       Icons.Outlined.Home),
+        BottomNavItem(Screen.ExpenseList, "History",   Icons.Filled.Receipt,    Icons.Outlined.Receipt),
+        BottomNavItem(Screen.AiInsights,  "AI",        Icons.Filled.AutoAwesome,Icons.Outlined.AutoAwesome),
+        BottomNavItem(Screen.Settings,    "Settings",  Icons.Filled.Settings,   Icons.Outlined.Settings),
     )
 
     val hideBottomBar = currentDest?.route in listOf(Screen.AddExpense.route)
@@ -102,7 +168,7 @@ private fun MainScaffold() {
                     enter   = slideInVertically { it } + fadeIn(),
                     exit    = slideOutVertically { it } + fadeOut()
                 ) {
-                    NavigationBar(tonalElevation = 0.dp) {   // ← fixed: was dp.times(0)
+                    NavigationBar(tonalElevation = 0.dp) {
                         bottomNavItems.forEach { item ->
                             val selected = currentDest?.hierarchy?.any {
                                 it.route == item.screen.route
