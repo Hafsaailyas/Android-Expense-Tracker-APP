@@ -1,9 +1,6 @@
 package com.hafsaIlyas.expensetracker.ui.screens.settings
 
 // ui/screens/settings/SettingsScreen.kt
-// Full Settings screen with an added CURRENCY section (group 2) between Appearance and Budget.
-// The currency picker dialog lists all supported currencies with symbol, code, name, and a
-// checkmark on the currently-selected one.  All other groups are unchanged.
 
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -14,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -26,6 +24,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -117,6 +116,15 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val colors  = rememberSettingsColors()
 
+    var showBudgetDialog by remember { mutableStateOf(false) }
+
+    // Collect the one-time event from ViewModel to auto-open budget dialog
+    LaunchedEffect(Unit) {
+        viewModel.openBudgetDialogEvent.collect {
+            showBudgetDialog = true
+        }
+    }
+
     val shareLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { viewModel.clearExportResult() }
@@ -170,6 +178,21 @@ fun SettingsScreen(
                 showCurrencyDialog = false
             },
             onDismiss = { showCurrencyDialog = false }
+        )
+    }
+
+    // ── Budget editor dialog ─────────────────────────────────────────────────
+    if (showBudgetDialog) {
+        BudgetEditorDialog(
+            currentInput    = uiState.budgetInput,
+            currencySymbol  = uiState.currentCurrency.symbol,
+            colors          = colors,
+            onInputChange   = viewModel::onBudgetInputChange,
+            onSave          = {
+                viewModel.saveBudget()
+                showBudgetDialog = false
+            },
+            onDismiss = { showBudgetDialog = false }
         )
     }
 
@@ -275,7 +298,7 @@ fun SettingsScreen(
                             icon      = Icons.Default.AccountBalanceWallet,
                             label     = "Monthly budget",
                             last      = false,
-                            clickable = { /* TODO: open budget editor */ }
+                            clickable = { showBudgetDialog = true }
                         ) {
                             Text(
                                 text     = if (uiState.monthlyBudget > 0)
@@ -452,6 +475,83 @@ fun SettingsScreen(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Budget editor dialog
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun BudgetEditorDialog(
+    currentInput   : String,
+    currencySymbol : String,
+    colors         : SettingsColors,
+    onInputChange  : (String) -> Unit,
+    onSave         : () -> Unit,
+    onDismiss      : () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest  = onDismiss,
+        containerColor    = colors.surface,
+        titleContentColor = colors.textDark,
+        textContentColor  = colors.textMuted,
+        title = {
+            Text(
+                text       = "Set Monthly Budget",
+                fontWeight = FontWeight.ExtraBold,
+                fontSize   = 18.sp
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text     = "Enter the maximum amount you want to spend this month.",
+                    fontSize = 13.sp,
+                    color    = colors.textMuted
+                )
+                OutlinedTextField(
+                    value         = currentInput,
+                    onValueChange = onInputChange,
+                    singleLine    = true,
+                    placeholder   = { Text("0", color = colors.textLight) },
+                    prefix        = {
+                        Text(
+                            text       = currencySymbol,
+                            fontWeight = FontWeight.SemiBold,
+                            color      = ColPrimary
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor   = ColPrimary,
+                        unfocusedBorderColor = colors.textLight,
+                        focusedLabelColor    = ColPrimary,
+                        cursorColor          = ColPrimary,
+                        focusedTextColor     = colors.textDark,
+                        unfocusedTextColor   = colors.textDark
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onSave,
+                enabled = currentInput.isNotBlank()
+            ) {
+                Text(
+                    text       = "Save",
+                    color      = if (currentInput.isNotBlank()) ColPrimary else colors.textLight,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = colors.textMuted)
+            }
+        }
+    )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Currency picker dialog
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -474,7 +574,6 @@ private fun CurrencyPickerDialog(
             )
         },
         text = {
-            // Scrollable currency list
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -517,7 +616,6 @@ private fun CurrencyPickerRow(
         verticalAlignment     = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Symbol pill
         Box(
             modifier = Modifier
                 .size(36.dp)
@@ -537,7 +635,6 @@ private fun CurrencyPickerRow(
             )
         }
 
-        // Code + name
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text       = currency.code,
@@ -552,7 +649,6 @@ private fun CurrencyPickerRow(
             )
         }
 
-        // Checkmark for selected currency
         if (isSelected) {
             Icon(
                 imageVector        = Icons.Default.Check,
@@ -565,7 +661,7 @@ private fun CurrencyPickerRow(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sub-components (unchanged from original)
+// Sub-components
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable

@@ -41,13 +41,15 @@ class SettingsViewModel @Inject constructor(
     private val prefsRepo      : UserPreferencesRepository,
     private val expenseRepo    : ExpenseRepository,
     private val exportService  : ExportService,
-    // ✅ Exposed as public val so DashboardScreen (and others) can access it
-    // without calling hiltViewModel<CurrencyService>() which crashes.
     val currencyService        : CurrencyService
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
+
+    // One-time event for opening budget dialog from dashboard
+    private val _openBudgetDialogEvent = MutableSharedFlow<Unit>()
+    val openBudgetDialogEvent = _openBudgetDialogEvent.asSharedFlow()
 
     init {
         val (monthStart, monthEnd) = run {
@@ -106,6 +108,14 @@ class SettingsViewModel @Inject constructor(
 
     fun setDynamicColor(enabled: Boolean) = viewModelScope.launch {
         prefsRepo.setDynamicColor(enabled)
+    }
+
+    // ── Budget Dialog Control ─────────────────────────────────────────────────
+
+    fun requestOpenBudgetDialog() {
+        viewModelScope.launch {
+            _openBudgetDialogEvent.emit(Unit)
+        }
     }
 
     // ── Budget ────────────────────────────────────────────────────────────────

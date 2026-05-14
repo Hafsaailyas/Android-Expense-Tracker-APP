@@ -1,11 +1,17 @@
 package com.hafsaIlyas.expensetracker.ui.viewmodel
 
 // ui/viewmodel/ExpenseViewModel.kt
-// ui/viewmodel/ExpenseViewModel.kt
+// CHANGES vs original:
+//   • Inject UserPreferencesRepository so we can read monthlyBudget Flow
+//   • observeExpenses() now combines expense stream with monthlyBudget stream
+//   • recomputeDashboard() accepts budget param and populates new budget fields
+//   • DashboardUiState extended: monthlyBudget, budgetPercentage, remainingBudget,
+//     isOverBudget, budgetStatus (BudgetStatus enum defined here)
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hafsaIlyas.expensetracker.data.local.entity.Expense
+import com.hafsaIlyas.expensetracker.data.preferences.UserPreferencesRepository
 import com.hafsaIlyas.expensetracker.data.repository.ExpenseRepository
 import com.hafsaIlyas.expensetracker.ui.screens.addexpense.AddExpenseUiState
 import com.hafsaIlyas.expensetracker.ui.screens.dashboard.*
@@ -13,7 +19,6 @@ import com.hafsaIlyas.expensetracker.ui.screens.expenselist.ExpenseListUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
 import javax.inject.Inject
@@ -27,9 +32,26 @@ private val CATEGORY_COLORS = listOf(
     0xFF90CAF9L, 0xFFBCAAA4L
 )
 
+// ── Budget status enum ────────────────────────────────────────────────────────
+
+/**
+ * Represents how the user's current month spending relates to their set budget.
+ *
+ * | Range (% of budget used) | Status       |
+ * |--------------------------|--------------|
+ * | 0 – 74 %                 | NORMAL       |
+ * | 75 – 89 %                | WARNING      |
+ * | 90 – 99 %                | HIGH_ALERT   |
+ * | ≥ 100 %                  | OVER_BUDGET  |
+ * | No budget set            | NO_BUDGET    |
+ */
+enum class BudgetStatus { NO_BUDGET, NORMAL, WARNING, HIGH_ALERT, OVER_BUDGET }
+
 @HiltViewModel
 class ExpenseViewModel @Inject constructor(
-    private val repository: ExpenseRepository
+    private val repository : ExpenseRepository,
+    // ── NEW: injected so dashboard can track budget ───────────────────────────
+    private val prefsRepo  : UserPreferencesRepository
 ) : ViewModel() {
 
     // ── Raw stream ────────────────────────────────────────────────────────────
@@ -46,15 +68,18 @@ class ExpenseViewModel @Inject constructor(
     // ── Add state ─────────────────────────────────────────────────────────────
     private val _addUiState = MutableStateFlow(AddExpenseUiState())
     val addUiState: StateFlow<AddExpenseUiState> = _addUiState.asStateFlow()
+
     private val _pendingDeletion = MutableStateFlow<Expense?>(null)
     val pendingDeletion: StateFlow<Expense?> = _pendingDeletion.asStateFlow()
 
     private var deletionJob: kotlinx.coroutines.Job? = null
+
     init {
         observeExpenses()
     }
 
     // ── Observation & Derivation ──────────────────────────────────────────────
+
     /**
      * Starts a 4-second countdown before actually deleting.
      * The UI shows a Snackbar during this window.
@@ -85,15 +110,25 @@ class ExpenseViewModel @Inject constructor(
             _pendingDeletion.value = null
         }
     }
+
+    /**
+     * Combines the expense stream with the monthly budget Flow so the dashboard
+     * reacts to both expense changes AND budget changes from Settings.
+     */
     private fun observeExpenses() {
         viewModelScope.launch {
-            repository.getAllExpenses()
+            combine(
+                repository.getAllExpenses(),
+                prefsRepo.monthlyBudget           // ← NEW: observe budget from DataStore
+            ) { expenses, budget ->
+                expenses to budget
+            }
                 .onStart { /* keep isLoading = true */ }
                 .catch { /* TODO: surface error */ }
-                .collect { expenses ->
+                .collect { (expenses, budget) ->
                     _allExpenses.value = expenses
                     recomputeListState(expenses)
-                    recomputeDashboard(expenses)
+                    recomputeDashboard(expenses, budget)   // ← passes budget through
                 }
         }
     }
@@ -148,7 +183,10 @@ class ExpenseViewModel @Inject constructor(
 
     // ── Dashboard Computation ─────────────────────────────────────────────────
 
-    private fun recomputeDashboard(expenses: List<Expense>) {
+    /**
+     * @param budget Monthly budget from DataStore (0.0 means not set).
+     */
+    private fun recomputeDashboard(expenses: List<Expense>, budget: Double) {
         val now      = Calendar.getInstance()
         val thisYear = now.get(Calendar.YEAR)
         val thisMon  = now.get(Calendar.MONTH)
@@ -207,6 +245,20 @@ class ExpenseViewModel @Inject constructor(
         val monthName = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
             .format(now.time)
 
+        // ── NEW: budget-derived fields ────────────────────────────────────────
+        val budgetPct       = if (budget > 0.0) (currentTotal / budget).toFloat() else 0f
+        val remainingBudget = if (budget > 0.0) budget - currentTotal else 0.0
+        val isOverBudget    = budget > 0.0 && currentTotal > budget
+
+        val budgetStatus = when {
+            budget <= 0.0       -> BudgetStatus.NO_BUDGET
+            budgetPct >= 1.0f   -> BudgetStatus.OVER_BUDGET
+            budgetPct >= 0.90f  -> BudgetStatus.HIGH_ALERT
+            budgetPct >= 0.75f  -> BudgetStatus.WARNING
+            else                -> BudgetStatus.NORMAL
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
         _dashboardUiState.update {
             it.copy(
                 isLoading            = false,
@@ -216,7 +268,13 @@ class ExpenseViewModel @Inject constructor(
                 percentageChange     = abs(pctChange).roundTo(1),
                 trendDirection       = trend,
                 categoryBreakdown    = categoryShares,
-                recentExpenses       = recent
+                recentExpenses       = recent,
+                // ── NEW budget fields ────────────────────────────────────────
+                monthlyBudget        = budget,
+                budgetPercentage     = budgetPct,
+                remainingBudget      = remainingBudget,
+                isOverBudget         = isOverBudget,
+                budgetStatus         = budgetStatus
             )
         }
     }

@@ -1,15 +1,14 @@
 package com.hafsaIlyas.expensetracker.ui.screens.dashboard
 
 // ui/screens/dashboard/DashboardScreen.kt
-// Updated to use CurrencyService for all monetary displays.
-// Changes from original:
-//   • DashboardScreen now obtains CurrencyService via SettingsViewModel (hiltViewModel)
-//     instead of calling hiltViewModel<CurrencyService>() which caused a ClassCastException
-//     because CurrencyService is NOT a ViewModel.
-//   • rememberCurrencyFormatter() used in StatRow, DonutWithLegend, TransactionRow
-//   • AnimatedCurrencyCounter in HeroCard passes currencyService
-//   • CategoryBarChart formatter is now the live CurrencyFormatter
-// Everything else (layout, animations, colours) is pixel-identical to the original.
+// CHANGES vs previous version:
+//   • HeroCard / TrendChip / HeroBudgetRing removed — replaced by SpendingHeaderCard
+//     (ui/screens/dashboard/components/SpendingHeaderCard.kt)
+//   • SpendingHeaderCard receives all budget fields from DashboardUiState:
+//     monthlyBudget, budgetPercentage, remainingBudget, isOverBudget, budgetStatus
+//   • Budget ring is now colour-coded by BudgetStatus (Normal/Warning/HighAlert/OverBudget)
+//   • "Budget OK ✓ / Approaching limit / Near limit! / Over budget!" chip + amount sub-label
+//   • All other layout / animations / colours are pixel-identical to the original.
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -28,7 +27,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.*
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,6 +41,7 @@ import com.hafsaIlyas.expensetracker.ui.components.rememberCurrencyFormatter
 import com.hafsaIlyas.expensetracker.ui.navigation.Screen
 import com.hafsaIlyas.expensetracker.ui.screens.dashboard.components.CategoryBarChart
 import com.hafsaIlyas.expensetracker.ui.screens.dashboard.components.CategoryDonutChart
+import com.hafsaIlyas.expensetracker.ui.screens.dashboard.components.SpendingHeaderCard
 import com.hafsaIlyas.expensetracker.ui.screens.settings.SettingsViewModel
 import com.hafsaIlyas.expensetracker.ui.viewmodel.ExpenseViewModel
 import kotlinx.coroutines.delay
@@ -51,7 +50,6 @@ private val Primary   = Color(0xFF1A5F7A)
 private val Secondary = Color(0xFF2C7865)
 private val Gold      = Color(0xFFF9D56E)
 private val DangerRed = Color(0xFFC62828)
-private val HeroWhite = Color.White
 
 private fun categoryBg(emoji: String): Color = when {
     emoji.startsWith("🍔") || emoji.startsWith("🥘") -> Color(0xFFEEF6FA)
@@ -113,10 +111,24 @@ fun DashboardScreen(
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
             item {
-                HeroCard(
-                    uiState         = uiState,
-                    currencyService = currencyService,
-                    modifier        = Modifier
+                val heroFormatter = rememberCurrencyFormatter(currencyService)
+                SpendingHeaderCard(
+                    monthName        = uiState.currentMonthName,
+                    currentTotal     = uiState.currentMonthTotal,
+                    previousTotal    = uiState.previousMonthTotal,
+                    percentageChange = uiState.percentageChange,
+                    trendDirection   = uiState.trendDirection,
+                    monthlyBudget    = uiState.monthlyBudget,
+                    budgetPercentage = uiState.budgetPercentage,
+                    remainingBudget  = uiState.remainingBudget,
+                    isOverBudget     = uiState.isOverBudget,
+                    budgetStatus     = uiState.budgetStatus,
+                    formatAmount     = { heroFormatter.format(it) },
+                    onSetBudgetClick = {
+                        settingsViewModel.requestOpenBudgetDialog()  // Use settingsViewModel, not viewModel
+                        navController.navigate(Screen.Settings.route)
+                    },
+                    modifier         = Modifier
                         .padding(horizontal = 16.dp)
                         .padding(top = 2.dp, bottom = 14.dp)
                 )
@@ -198,122 +210,6 @@ private fun DashboardTopBar(monthName: String, onAddClick: () -> Unit) {
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
     )
-}
-
-// ── Hero card ─────────────────────────────────────────────────────────────────
-
-@Composable
-private fun HeroCard(
-    uiState         : DashboardUiState,
-    currencyService : CurrencyService,
-    modifier        : Modifier = Modifier
-) {
-    val cardScale = remember { Animatable(0.94f) }
-    val cardAlpha = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        cardScale.animateTo(1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMediumLow))
-        cardAlpha.animateTo(1f, tween(380))
-    }
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .scale(cardScale.value)
-            .alpha(cardAlpha.value)
-            .clip(RoundedCornerShape(24.dp))
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(Primary, Secondary),
-                    start  = Offset(0f, 0f),
-                    end    = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
-                )
-            )
-    ) {
-        Box(
-            modifier = Modifier
-                .size(140.dp)
-                .offset(x = 30.dp, y = (-30).dp)
-                .align(Alignment.TopEnd)
-                .background(
-                    Brush.radialGradient(colors = listOf(Color.White.copy(alpha = 0.06f), Color.Transparent)),
-                    CircleShape
-                )
-        )
-
-        Column(modifier = Modifier.padding(20.dp)) {
-            Text("TOTAL SPENT",
-                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.8.sp),
-                fontWeight = FontWeight.SemiBold,
-                color = HeroWhite.copy(alpha = 0.65f))
-
-            Spacer(Modifier.height(6.dp))
-
-            AnimatedCurrencyCounter(
-                targetValue     = uiState.currentMonthTotal,
-                currencyService = currencyService,
-                style           = MaterialTheme.typography.displaySmall.copy(
-                    fontWeight    = FontWeight(800),
-                    letterSpacing = (-2).sp,
-                    fontSize      = 40.sp
-                ),
-                color = HeroWhite
-            )
-
-            Spacer(Modifier.height(10.dp))
-
-            Row(
-                modifier              = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment     = Alignment.CenterVertically
-            ) {
-                TrendChip(direction = uiState.trendDirection, percentageChange = uiState.percentageChange)
-                HeroBudgetRing(spent = uiState.currentMonthTotal, categoryCount = uiState.categoryBreakdown.size)
-            }
-        }
-    }
-}
-
-@Composable
-private fun TrendChip(direction: TrendDirection, percentageChange: Double) {
-    val (icon, text) = when (direction) {
-        TrendDirection.UP      -> Icons.Default.TrendingUp   to "+${percentageChange}% vs last month"
-        TrendDirection.DOWN    -> Icons.Default.TrendingDown to "-${percentageChange}% vs last month"
-        TrendDirection.NEUTRAL -> Icons.Default.TrendingFlat to "±0% vs last month"
-    }
-    Surface(shape = RoundedCornerShape(20.dp), color = HeroWhite.copy(alpha = 0.15f)) {
-        Row(
-            modifier              = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-            verticalAlignment     = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
-            Icon(icon, null, tint = Gold, modifier = Modifier.size(13.dp))
-            Text(text, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = Gold)
-        }
-    }
-}
-
-@Composable
-private fun HeroBudgetRing(spent: Double, categoryCount: Int) {
-    val animFraction = remember { Animatable(0f) }
-    LaunchedEffect(spent) {
-        animFraction.animateTo(0.68f, spring(Spring.DampingRatioNoBouncy, Spring.StiffnessLow))
-    }
-    Box(modifier = Modifier.size(60.dp), contentAlignment = Alignment.Center) {
-        androidx.compose.foundation.Canvas(modifier = Modifier.size(60.dp)) {
-            val stroke  = androidx.compose.ui.graphics.drawscope.Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round)
-            val inset   = stroke.width / 2
-            val arcSize = androidx.compose.ui.geometry.Size(size.width - inset * 2, size.height - inset * 2)
-            val topLeft = Offset(inset, inset)
-            drawArc(color = HeroWhite.copy(alpha = 0.2f), startAngle = -90f, sweepAngle = 360f,
-                useCenter = false, topLeft = topLeft, size = arcSize, style = stroke)
-            drawArc(color = Gold, startAngle = -90f, sweepAngle = 360f * animFraction.value,
-                useCenter = false, topLeft = topLeft, size = arcSize, style = stroke)
-        }
-        Text("$categoryCount\ncat",
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-            fontWeight = FontWeight.Bold, color = HeroWhite,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center, lineHeight = 11.sp)
-    }
 }
 
 // ── Quick stat row ────────────────────────────────────────────────────────────
@@ -463,7 +359,7 @@ private fun ChartToggle(active: ChartType, onToggle: (ChartType) -> Unit) {
                     Text(type.label, modifier = Modifier.padding(horizontal = 13.dp, vertical = 5.dp),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (selected) HeroWhite else MaterialTheme.colorScheme.onSurfaceVariant)
+                        color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -538,8 +434,8 @@ private fun FilterPill(label: String, selected: Boolean, onClick: () -> Unit) {
         Box(modifier = Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
             Text(label, style = MaterialTheme.typography.labelSmall,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (selected) HeroWhite else MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+                color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+            )        }
     }
 }
 
