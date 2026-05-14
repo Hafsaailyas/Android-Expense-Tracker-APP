@@ -1,11 +1,8 @@
 package com.hafsaIlyas.expensetracker.ui.screens.dashboard.components
 
 // ui/screens/dashboard/components/CategoryBarChart.kt
-// Redesigned to match HTML bar-chart aesthetic:
-//   • Each row: category name left, amount + % badge right (matching HTML legend-item layout)
-//   • Track: 8dp height, outlineVariant 35% alpha
-//   • Fill: horizontal gradient from barColor 75% → barColor 100%, spring animation
-//   • % badge: small rounded pill, barColor tinted bg
+// Updated to accept an external CurrencyFormatter so the bar amounts react to currency changes.
+// All layout / animation / visual code is identical to the original.
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -21,14 +18,26 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hafsaIlyas.expensetracker.data.currency.CurrencyFormatter
+import com.hafsaIlyas.expensetracker.data.currency.CurrencyService
+import com.hafsaIlyas.expensetracker.ui.components.rememberCurrencyFormatter
 import com.hafsaIlyas.expensetracker.ui.screens.dashboard.CategoryShare
-import java.text.NumberFormat
-import java.util.Locale
 
+/**
+ * Horizontal gradient bar chart for category breakdown.
+ *
+ * Pass either:
+ *  - [formatter]       — a pre-built [CurrencyFormatter] (preferred when already available)
+ *  - [currencyService] — will create the formatter internally via [rememberCurrencyFormatter]
+ *
+ * If neither is provided, falls back to plain US dollar formatting (backward-compat).
+ */
 @Composable
 fun CategoryBarChart(
-    categories: List<CategoryShare>,
-    modifier  : Modifier = Modifier
+    categories      : List<CategoryShare>,
+    modifier        : Modifier             = Modifier,
+    formatter       : CurrencyFormatter?   = null,
+    currencyService : CurrencyService?     = null
 ) {
     val animProgress = remember { Animatable(0f) }
     LaunchedEffect(categories) {
@@ -39,66 +48,53 @@ fun CategoryBarChart(
         )
     }
 
-    val formatter = NumberFormat.getCurrencyInstance(Locale.US)
+    // Resolve formatter: explicit > service > US-dollar fallback
+    val resolvedFormatter: CurrencyFormatter? = formatter
+        ?: currencyService?.let { rememberCurrencyFormatter(it) }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
         categories.forEach { share ->
-            BarRow(share = share, progress = animProgress.value, formatter = formatter)
+            BarRow(
+                share     = share,
+                progress  = animProgress.value,
+                formatter = resolvedFormatter
+            )
         }
     }
 }
 
 @Composable
 private fun BarRow(
-    share    : CategoryShare,
-    progress : Float,
-    formatter: NumberFormat
+    share     : CategoryShare,
+    progress  : Float,
+    formatter : CurrencyFormatter?
 ) {
     val barColor = Color(share.color)
 
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    val amountText = formatter?.format(share.amount)
+        ?: java.text.NumberFormat.getCurrencyInstance(java.util.Locale.US).format(share.amount)
 
-        // Header row: category name left · amount + % badge right
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(
             modifier              = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment     = Alignment.CenterVertically
         ) {
-            // Emoji + name
-            Text(
-                text       = share.category,
-                style      = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Medium,
-                color      = MaterialTheme.colorScheme.onSurface
-            )
+            Text(share.category, style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment     = Alignment.CenterVertically
-            ) {
-                // Amount in bar color
-                Text(
-                    text       = formatter.format(share.amount),
-                    style      = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color      = barColor
-                )
-                // % pill badge
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = barColor.copy(alpha = 0.12f)
-                ) {
-                    Text(
-                        text     = "${share.percentage.toInt()}%",
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(amountText, style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold, color = barColor)
+                Surface(shape = RoundedCornerShape(4.dp), color = barColor.copy(alpha = 0.12f)) {
+                    Text("${share.percentage.toInt()}%",
                         style    = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                         color    = barColor,
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                    )
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
                 }
             }
         }
 
-        // Track + animated fill
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -112,9 +108,7 @@ private fun BarRow(
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(4.dp))
                     .background(
-                        Brush.horizontalGradient(
-                            colors = listOf(barColor.copy(alpha = 0.75f), barColor)
-                        )
+                        Brush.horizontalGradient(colors = listOf(barColor.copy(alpha = 0.75f), barColor))
                     )
             )
         }

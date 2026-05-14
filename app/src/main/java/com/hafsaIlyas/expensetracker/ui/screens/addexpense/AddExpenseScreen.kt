@@ -1,13 +1,13 @@
 package com.hafsaIlyas.expensetracker.ui.screens.addexpense
 
 // ui/screens/addexpense/AddExpenseScreen.kt
-// Redesigned to match HTML mockup exactly:
-//   • White/surface amount hero card with blinking cursor
-//   • 4-column category grid with rounded tiles, emoji + label
-//   • Note + date form fields with leading icons
-//   • Primary "Save Expense" button + danger "Delete Expense" outline button
-//   • Full dark-mode + light-mode support via MaterialTheme tokens
-//   • Smooth animated save-button state transition
+// Updated to use CurrencyService for the amount hero card symbol.
+// Changes from original:
+//   • AddExpenseScreen now obtains CurrencyService via SettingsViewModel (hiltViewModel)
+//     — same pattern used by DashboardScreen and ExpenseListScreen.
+//   • AmountHeroCard receives currencySymbol: String and renders it live instead
+//     of the hardcoded "$".
+// Everything else (layout, animations, colours) is pixel-identical to the original.
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.hafsaIlyas.expensetracker.ui.components.rememberCurrencyFormatter
+import com.hafsaIlyas.expensetracker.ui.screens.settings.SettingsViewModel
 import com.hafsaIlyas.expensetracker.ui.viewmodel.ExpenseViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -67,10 +69,19 @@ private val CATEGORIES = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddExpenseScreen(
-    navController: NavController,
-    viewModel: ExpenseViewModel = hiltViewModel()
+    navController    : NavController,
+    viewModel        : ExpenseViewModel  = hiltViewModel(),
+    // ✅ CurrencyService is a @Singleton, NOT a ViewModel.
+    // Obtain it via SettingsViewModel which holds it as an injected dependency —
+    // identical to the fix applied in DashboardScreen and ExpenseListScreen.
+    settingsViewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.addUiState.collectAsState()
+
+    // ✅ Live CurrencyFormatter — updates automatically when the user changes
+    // currency in Settings. We only need the symbol for the hero card.
+    val currencyFmt    = rememberCurrencyFormatter(settingsViewModel.currencyService)
+    val currencySymbol = currencyFmt.currency.symbol   // e.g. "Rs.", "$", "€", "£"
 
     LaunchedEffect(uiState.isSaved) {
         if (uiState.isSaved) {
@@ -89,13 +100,12 @@ fun AddExpenseScreen(
                 title = {
                     Text(
                         "Add Expense",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.ExtraBold,
+                        style         = MaterialTheme.typography.titleLarge,
+                        fontWeight    = FontWeight.ExtraBold,
                         letterSpacing = (-0.5).sp
                     )
                 },
                 navigationIcon = {
-                    // Rounded back button matching HTML .back-btn
                     Box(
                         modifier = Modifier
                             .padding(start = 12.dp)
@@ -113,7 +123,7 @@ fun AddExpenseScreen(
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint     = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -135,10 +145,11 @@ fun AddExpenseScreen(
 
             // ── Amount hero card ──────────────────────────────────────────────
             AmountHeroCard(
-                amount = uiState.amount,
-                onValueChange = viewModel::onAmountChange,
-                isError = uiState.amountError != null,
-                errorText = uiState.amountError
+                amount         = uiState.amount,
+                onValueChange  = viewModel::onAmountChange,
+                isError        = uiState.amountError != null,
+                errorText      = uiState.amountError,
+                currencySymbol = currencySymbol              // ✅ live symbol
             )
 
             Spacer(Modifier.height(14.dp))
@@ -151,13 +162,12 @@ fun AddExpenseScreen(
                 AnimatedVisibility(visible = uiState.categoryError != null) {
                     Text(
                         uiState.categoryError ?: "",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.labelSmall,
+                        color    = MaterialTheme.colorScheme.error,
+                        style    = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(bottom = 6.dp)
                     )
                 }
 
-                // 4-column grid matching HTML .cat-grid
                 val chunked = CATEGORIES.chunked(4)
                 chunked.forEach { row ->
                     Row(
@@ -170,14 +180,11 @@ fun AddExpenseScreen(
                             CategoryTile(
                                 category = cat,
                                 selected = uiState.selectedCategory == cat.full,
-                                onClick = { viewModel.onCategoryChange(cat.full) },
+                                onClick  = { viewModel.onCategoryChange(cat.full) },
                                 modifier = Modifier.weight(1f)
                             )
                         }
-                        // Pad remaining cells if row is short
-                        repeat(4 - row.size) {
-                            Spacer(Modifier.weight(1f))
-                        }
+                        repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             }
@@ -189,12 +196,11 @@ fun AddExpenseScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Note field
                 FormField(
                     icon = {
                         Icon(
                             Icons.Default.Notes, null,
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint     = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
                         )
                     },
@@ -207,38 +213,33 @@ fun AddExpenseScreen(
                             )
                         }
                     },
-                    // We overlay a transparent text field for actual input
-                    isTextField = true,
-                    textFieldValue = uiState.note,
+                    isTextField       = true,
+                    textFieldValue    = uiState.note,
                     onTextFieldChange = viewModel::onNoteChange
                 )
 
-                // Date field (read-only display)
                 FormField(
                     icon = {
                         Icon(
                             Icons.Default.CalendarMonth, null,
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint     = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
                         )
                     },
                     content = {
                         Text(
                             todayLabel,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style      = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color      = MaterialTheme.colorScheme.onSurface
                         )
                     },
                     trailingIcon = {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack, // chevron substitute
+                            imageVector        = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                            modifier = Modifier
-                                .size(16.dp)
-                                // Rotate 180° to make it a right-chevron
-                                .then(Modifier)
+                            tint               = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            modifier           = Modifier.size(16.dp)
                         )
                     }
                 )
@@ -246,30 +247,29 @@ fun AddExpenseScreen(
 
             Spacer(Modifier.height(14.dp))
 
-            // ── Save button ───────────────────────────────────────────────────
+            // ── Save / Delete buttons ─────────────────────────────────────────
             Column(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 SaveButton(isSaving = uiState.isSaving, onClick = viewModel::saveExpense)
 
-                // Delete button (outline danger style)
                 OutlinedButton(
-                    onClick = { navController.popBackStack() },
+                    onClick  = { navController.popBackStack() },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(54.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    border = androidx.compose.foundation.BorderStroke(
+                    shape    = RoundedCornerShape(16.dp),
+                    border   = androidx.compose.foundation.BorderStroke(
                         1.5.dp, MaterialTheme.colorScheme.error
                     ),
-                    colors = ButtonDefaults.outlinedButtonColors(
+                    colors   = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.error
                     )
                 ) {
                     Text(
                         "Delete Expense",
-                        style = MaterialTheme.typography.labelLarge,
+                        style      = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -281,87 +281,88 @@ fun AddExpenseScreen(
 }
 
 // ── Amount hero card ──────────────────────────────────────────────────────────
-// Matches HTML .amount-hero: white card, centered amount with blinking cursor
+// currencySymbol replaces the original hardcoded "$".
 
 @Composable
 private fun AmountHeroCard(
-    amount: String,
-    onValueChange: (String) -> Unit,
-    isError: Boolean,
-    errorText: String?
+    amount         : String,
+    onValueChange  : (String) -> Unit,
+    isError        : Boolean,
+    errorText      : String?,
+    currencySymbol : String    // ✅ e.g. "Rs.", "$", "€", "£"
 ) {
-    // Blinking cursor animation
     val cursorAlpha by rememberInfiniteTransition(label = "cursor").animateFloat(
-        initialValue = 1f,
-        targetValue = 0f,
+        initialValue  = 1f,
+        targetValue   = 0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(500, easing = LinearEasing),
+            animation  = tween(500, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "cursor_blink"
     )
 
     Surface(
-        modifier = Modifier
+        modifier        = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = androidx.compose.foundation.BorderStroke(
+        shape           = RoundedCornerShape(20.dp),
+        color           = MaterialTheme.colorScheme.surface,
+        border          = androidx.compose.foundation.BorderStroke(
             0.5.dp, MaterialTheme.colorScheme.outlineVariant
         ),
         shadowElevation = 0.dp,
-        tonalElevation = 2.dp
+        tonalElevation  = 2.dp
     ) {
         Column(
-            modifier = Modifier.padding(24.dp),
+            modifier            = Modifier.padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
                 "AMOUNT",
-                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
+                style      = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color      = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Box(contentAlignment = Alignment.Center) {
-                // Invisible text field for capturing input
+                // Invisible BasicTextField captures keyboard input
                 androidx.compose.foundation.text.BasicTextField(
-                    value = amount,
-                    onValueChange = onValueChange,
+                    value           = amount,
+                    onValueChange   = onValueChange,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.displayMedium.copy(
-                        fontWeight = FontWeight.ExtraBold,
+                    singleLine      = true,
+                    textStyle       = MaterialTheme.typography.displayMedium.copy(
+                        fontWeight    = FontWeight.ExtraBold,
                         letterSpacing = (-3).sp,
-                        color = Color.Transparent // Hidden — we render text manually below
+                        color         = Color.Transparent  // hidden — rendered manually below
                     ),
                     modifier = Modifier
                         .width(200.dp)
                         .height(70.dp)
                 )
 
-                // Visual amount display row: $  <digits>  |cursor
+                // Visual display row: <symbol>  <digits>  |cursor
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment     = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
+                    // ✅ Live currency symbol (was hardcoded "$")
                     Text(
-                        "$",
-                        style = MaterialTheme.typography.headlineLarge.copy(fontSize = 28.sp),
+                        text       = currencySymbol,
+                        style      = MaterialTheme.typography.headlineLarge.copy(fontSize = 28.sp),
                         fontWeight = FontWeight.Light,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color      = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
-                        text = amount.ifEmpty { "0" },
+                        text  = amount.ifEmpty { "0" },
                         style = MaterialTheme.typography.displayMedium.copy(
-                            fontSize = 56.sp,
+                            fontSize      = 56.sp,
                             letterSpacing = (-3).sp
                         ),
                         fontWeight = FontWeight.ExtraBold,
-                        color = if (isError)
+                        color      = if (isError)
                             MaterialTheme.colorScheme.error
                         else
                             MaterialTheme.colorScheme.onSurface
@@ -383,8 +384,8 @@ private fun AmountHeroCard(
             AnimatedVisibility(visible = isError && errorText != null) {
                 Text(
                     errorText ?: "",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.labelSmall,
+                    color     = MaterialTheme.colorScheme.error,
+                    style     = MaterialTheme.typography.labelSmall,
                     textAlign = TextAlign.Center
                 )
             }
@@ -393,19 +394,18 @@ private fun AmountHeroCard(
 }
 
 // ── Category tile ─────────────────────────────────────────────────────────────
-// Matches HTML .cat-item: rounded tile, emoji on top, label below, primary border when selected
 
 @Composable
 private fun CategoryTile(
-    category: Category,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    category : Category,
+    selected : Boolean,
+    onClick  : () -> Unit,
+    modifier : Modifier = Modifier
 ) {
-    val animBorder by animateFloatAsState(
-        targetValue = if (selected) 1f else 0f,
+    animateFloatAsState(
+        targetValue   = if (selected) 1f else 0f,
         animationSpec = spring(Spring.DampingRatioMediumBouncy),
-        label = "tile_border_${category.label}"
+        label         = "tile_border_${category.label}"
     )
 
     Box(
@@ -433,74 +433,66 @@ private fun CategoryTile(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
+            Text(category.emoji, fontSize = 22.sp)
             Text(
-                category.emoji,
-                fontSize = 22.sp
-            )
-            Text(
-                category.label,
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                text       = category.label,
+                style      = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                 fontWeight = FontWeight.SemiBold,
-                color = if (selected)
+                color      = if (selected)
                     MaterialTheme.colorScheme.primary
                 else
                     MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                maxLines = 1
+                textAlign  = TextAlign.Center,
+                maxLines   = 1
             )
         }
     }
 }
 
 // ── Form field ────────────────────────────────────────────────────────────────
-// Matches HTML .form-field: white pill with left icon, content, optional trailing icon
 
 @Composable
 private fun FormField(
-    icon: @Composable () -> Unit,
-    content: @Composable () -> Unit,
-    trailingIcon: (@Composable () -> Unit)? = null,
-    isTextField: Boolean = false,
-    textFieldValue: String = "",
-    onTextFieldChange: (String) -> Unit = {}
+    icon              : @Composable () -> Unit,
+    content           : @Composable () -> Unit,
+    trailingIcon      : (@Composable () -> Unit)? = null,
+    isTextField       : Boolean  = false,
+    textFieldValue    : String   = "",
+    onTextFieldChange : (String) -> Unit = {}
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = androidx.compose.foundation.BorderStroke(
+        modifier       = Modifier.fillMaxWidth(),
+        shape          = RoundedCornerShape(14.dp),
+        color          = MaterialTheme.colorScheme.surface,
+        border         = androidx.compose.foundation.BorderStroke(
             0.5.dp, MaterialTheme.colorScheme.outlineVariant
         ),
         tonalElevation = 1.dp
     ) {
         Row(
-            modifier = Modifier
+            modifier              = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment     = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             icon()
-
             Box(modifier = Modifier.weight(1f)) {
                 if (isTextField) {
-                    // Transparent overlay text field
                     androidx.compose.foundation.text.BasicTextField(
-                        value = textFieldValue,
+                        value         = textFieldValue,
                         onValueChange = onTextFieldChange,
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        singleLine    = true,
+                        textStyle     = MaterialTheme.typography.bodyMedium.copy(
                             color = MaterialTheme.colorScheme.onSurface
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
-                    // Placeholder
                     if (textFieldValue.isEmpty()) content()
                 } else {
                     content()
                 }
             }
-
             trailingIcon?.invoke()
         }
     }
@@ -511,69 +503,68 @@ private fun FormField(
 @Composable
 private fun SectionLabel(text: String) {
     Text(
-        text = text,
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onSurface,
+        text          = text,
+        style         = MaterialTheme.typography.titleSmall,
+        fontWeight    = FontWeight.Bold,
+        color         = MaterialTheme.colorScheme.onSurface,
         letterSpacing = (-0.3).sp
     )
 }
 
 // ── Save button ───────────────────────────────────────────────────────────────
-// Matches HTML .save-btn: full-width primary, check icon + "Save Expense"
 
 @Composable
 private fun SaveButton(isSaving: Boolean, onClick: () -> Unit) {
     Button(
-        onClick = onClick,
-        enabled = !isSaving,
+        onClick  = onClick,
+        enabled  = !isSaving,
         modifier = Modifier
             .fillMaxWidth()
             .height(54.dp),
-        shape = RoundedCornerShape(16.dp),
+        shape  = RoundedCornerShape(16.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
+            containerColor         = MaterialTheme.colorScheme.primary,
+            contentColor           = MaterialTheme.colorScheme.onPrimary,
             disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-            disabledContentColor = MaterialTheme.colorScheme.onPrimary
+            disabledContentColor   = MaterialTheme.colorScheme.onPrimary
         )
     ) {
         AnimatedContent(
-            targetState = isSaving,
-            label = "save_btn_content",
+            targetState    = isSaving,
+            label          = "save_btn_content",
             transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) }
         ) { saving ->
             if (saving) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment     = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        color = MaterialTheme.colorScheme.onPrimary,
+                        modifier    = Modifier.size(18.dp),
+                        color       = MaterialTheme.colorScheme.onPrimary,
                         strokeWidth = 2.dp
                     )
                     Text(
                         "Saving…",
-                        style = MaterialTheme.typography.labelLarge,
+                        style      = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold
                     )
                 }
             } else {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment     = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
                         Icons.Default.Check, null,
                         modifier = Modifier.size(20.dp),
-                        tint = Color(0xFFF9D56E) // gold accent matching HTML
+                        tint     = Color(0xFFF9D56E)   // gold accent matching HTML
                     )
                     Text(
                         "Save Expense",
-                        style = MaterialTheme.typography.labelLarge,
+                        style      = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
+                        fontSize   = 16.sp
                     )
                 }
             }

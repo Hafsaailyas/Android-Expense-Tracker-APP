@@ -1,26 +1,9 @@
 package com.hafsaIlyas.expensetracker.ui.screens.settings
 
 // ui/screens/settings/SettingsScreen.kt
-// Pixel-exact match of the HTML SpendSense settings screen — with full dark mode support
-// matching the design system used across AiInsightsScreen, InsightCard, DashboardScreen, etc.
-//
-//  Dark-mode palette mirrors existing screens:
-//    bg         #0A1112   (ColorBgDark  in AiInsightsScreen)
-//    surface    #1A1F2E   (ContainerDark in InsightCard / --dark-surface)
-//    border     rgba(26,95,122,0.18)  (ContainerDarkBorder in InsightCard)
-//    divider    #2A2F3E
-//    text-dark  #FFFFFF
-//    text-muted #AAAAAA   (ColTextLight)
-//    text-light #666C7A
-//    seg-bg     #252B3B   (slightly lighter than surface)
-//    budget-track #252B3B
-//
-//  Groups (cards, border-radius 18dp, border 0.5dp themed):
-//   1. APPEARANCE    — Theme seg-control (Light|Dark|Auto) + Dynamic color toggle
-//   2. BUDGET        — Monthly budget row (value + chevron) + Budget usage bar
-//   3. NOTIFICATIONS — Budget alerts toggle + Daily reminder (value + chevron)
-//   4. DATA & EXPORT — Export CSV + Export Text + Clear all data (red)
-//   5. ABOUT         — 4dp gradient strip + name + version + heart
+// Full Settings screen with an added CURRENCY section (group 2) between Appearance and Budget.
+// The currency picker dialog lists all supported currencies with symbol, code, name, and a
+// checkmark on the currently-selected one.  All other groups are unchanged.
 
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -47,45 +30,45 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.hafsaIlyas.expensetracker.data.currency.Currency
+import com.hafsaIlyas.expensetracker.data.currency.CurrencyFormatter
+import com.hafsaIlyas.expensetracker.data.currency.SUPPORTED_CURRENCIES
 import com.hafsaIlyas.expensetracker.ui.theme.AppTheme
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Brand constants — identical across all screens
 // ─────────────────────────────────────────────────────────────────────────────
-private val ColPrimary   = Color(0xFF1A5F7A)   // --primary
-private val ColSecondary = Color(0xFF2C7865)   // --secondary
-private val ColGold      = Color(0xFFF9D56E)   // --gold
-private val ColDanger    = Color(0xFFC62828)   // --danger
-private val ColWarning   = Color(0xFFE65100)   // --warning  (heart icon colour)
+private val ColPrimary   = Color(0xFF1A5F7A)
+private val ColSecondary = Color(0xFF2C7865)
+private val ColGold      = Color(0xFFF9D56E)
+private val ColDanger    = Color(0xFFC62828)
+private val ColWarning   = Color(0xFFE65100)
 
-// Light-mode tokens
-private val ColBgLight        = Color(0xFFF0F4F8)   // --bg
-private val ColSurfaceLight   = Color(0xFFFFFFFF)   // --surface
-private val ColBorderLight    = Color(0x1A1A5F7A)   // rgba(26,95,122,0.10)
+private val ColBgLight        = Color(0xFFF0F4F8)
+private val ColSurfaceLight   = Color(0xFFFFFFFF)
+private val ColBorderLight    = Color(0x1A1A5F7A)
 private val ColDividerLight   = Color(0xFFF5F5F5)
-private val ColTextDarkLight  = Color(0xFF1A1F2E)   // --text-dark
-private val ColTextMutedLight = Color(0xFF888888)   // --text-muted
-private val ColTextLightL     = Color(0xFFAAAAAA)   // --text-light
+private val ColTextDarkLight  = Color(0xFF1A1F2E)
+private val ColTextMutedLight = Color(0xFF888888)
+private val ColTextLightL     = Color(0xFFAAAAAA)
 private val ColSegBgLight     = Color(0xFFF0F4F8)
 private val ColTrackLight     = Color(0xFFE8EDF0)
 
-// Dark-mode tokens — aligned with AiInsightsScreen / InsightCard / DashboardScreen
-private val ColBgDark        = Color(0xFF0A1112)   // --dark-bg  (AiInsightsScreen)
-private val ColSurfaceDark   = Color(0xFF1A1F2E)   // --dark-surface  (InsightCard)
-private val ColBorderDark    = Color(0x2E1A5F7A)   // rgba(26,95,122,0.18)
+private val ColBgDark        = Color(0xFF0A1112)
+private val ColSurfaceDark   = Color(0xFF1A1F2E)
+private val ColBorderDark    = Color(0x2E1A5F7A)
 private val ColDividerDark   = Color(0xFF2A2F3E)
 private val ColTextDarkDark  = Color(0xFFFFFFFF)
-private val ColTextMutedDark = Color(0xFFAAAAAA)   // --text-light reused as muted in dark
+private val ColTextMutedDark = Color(0xFFAAAAAA)
 private val ColTextLightDark = Color(0xFF666C7A)
 private val ColSegBgDark     = Color(0xFF252B3B)
 private val ColTrackDark     = Color(0xFF252B3B)
 
-// Gradients (same in both modes)
 private val GradientAbout  = listOf(ColPrimary, ColSecondary, ColGold)
 private val GradientBudget = listOf(ColPrimary, ColSecondary)
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Theme-aware colour bundle — resolved once, threaded via CompositionLocal
+// Theme-aware colour bundle
 // ─────────────────────────────────────────────────────────────────────────────
 private data class SettingsColors(
     val bg         : Color,
@@ -104,33 +87,20 @@ private val LocalSettingsColors = compositionLocalOf<SettingsColors> {
     error("SettingsColors not provided")
 }
 
-/** Resolves the correct colour bundle for the current Material theme. */
 @Composable
 private fun rememberSettingsColors(): SettingsColors {
     val isDark = !MaterialTheme.colorScheme.background.isBright()
     return remember(isDark) {
         if (isDark) SettingsColors(
-            bg          = ColBgDark,
-            surface     = ColSurfaceDark,
-            border      = ColBorderDark,
-            divider     = ColDividerDark,
-            textDark    = ColTextDarkDark,
-            textMuted   = ColTextMutedDark,
-            textLight   = ColTextLightDark,
-            segBg       = ColSegBgDark,
-            budgetTrack = ColTrackDark,
-            isDark      = true
+            bg = ColBgDark, surface = ColSurfaceDark, border = ColBorderDark,
+            divider = ColDividerDark, textDark = ColTextDarkDark,
+            textMuted = ColTextMutedDark, textLight = ColTextLightDark,
+            segBg = ColSegBgDark, budgetTrack = ColTrackDark, isDark = true
         ) else SettingsColors(
-            bg          = ColBgLight,
-            surface     = ColSurfaceLight,
-            border      = ColBorderLight,
-            divider     = ColDividerLight,
-            textDark    = ColTextDarkLight,
-            textMuted   = ColTextMutedLight,
-            textLight   = ColTextLightL,
-            segBg       = ColSegBgLight,
-            budgetTrack = ColTrackLight,
-            isDark      = false
+            bg = ColBgLight, surface = ColSurfaceLight, border = ColBorderLight,
+            divider = ColDividerLight, textDark = ColTextDarkLight,
+            textMuted = ColTextMutedLight, textLight = ColTextLightL,
+            segBg = ColSegBgLight, budgetTrack = ColTrackLight, isDark = false
         )
     }
 }
@@ -147,7 +117,6 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val colors  = rememberSettingsColors()
 
-    // Share-sheet launcher (export)
     val shareLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { viewModel.clearExportResult() }
@@ -157,7 +126,6 @@ fun SettingsScreen(
         if (r is ExportResult.Ready) shareLauncher.launch(r.intent)
     }
 
-    // Error snackbar
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(uiState.exportResult) {
         val r = uiState.exportResult
@@ -167,12 +135,14 @@ fun SettingsScreen(
         }
     }
 
-    // Clear-data confirmation dialog
-    var showClearDialog by remember { mutableStateOf(false) }
+    var showClearDialog    by remember { mutableStateOf(false) }
+    var showCurrencyDialog by remember { mutableStateOf(false) }
+
+    // ── Clear-data dialog ─────────────────────────────────────────────────────
     if (showClearDialog) {
         AlertDialog(
-            onDismissRequest = { showClearDialog = false },
-            containerColor   = colors.surface,
+            onDismissRequest  = { showClearDialog = false },
+            containerColor    = colors.surface,
             titleContentColor = colors.textDark,
             textContentColor  = colors.textMuted,
             title   = { Text("Clear all data?", fontWeight = FontWeight.Bold) },
@@ -187,6 +157,19 @@ fun SettingsScreen(
                     Text("Cancel", color = colors.textMuted)
                 }
             }
+        )
+    }
+
+    // ── Currency picker dialog ────────────────────────────────────────────────
+    if (showCurrencyDialog) {
+        CurrencyPickerDialog(
+            currentCurrency = uiState.currentCurrency,
+            colors          = colors,
+            onSelect        = { currency ->
+                viewModel.setCurrency(currency)
+                showCurrencyDialog = false
+            },
+            onDismiss = { showCurrencyDialog = false }
         )
     }
 
@@ -211,12 +194,10 @@ fun SettingsScreen(
                     color         = colors.textDark,
                     letterSpacing = (-0.8).sp,
                     modifier      = Modifier.padding(
-                        start  = 20.dp, top    = 52.dp,
-                        end    = 20.dp, bottom = 16.dp
+                        start = 20.dp, top = 52.dp, end = 20.dp, bottom = 16.dp
                     )
                 )
 
-                // ── Group list ────────────────────────────────────────────────
                 Column(
                     modifier            = Modifier
                         .fillMaxWidth()
@@ -237,13 +218,11 @@ fun SettingsScreen(
                                     AppTheme.SYSTEM -> "Auto"
                                 },
                                 onSelect = { opt ->
-                                    viewModel.setTheme(
-                                        when (opt) {
-                                            "Light" -> AppTheme.LIGHT
-                                            "Dark"  -> AppTheme.DARK
-                                            else    -> AppTheme.SYSTEM
-                                        }
-                                    )
+                                    viewModel.setTheme(when (opt) {
+                                        "Light" -> AppTheme.LIGHT
+                                        "Dark"  -> AppTheme.DARK
+                                        else    -> AppTheme.SYSTEM
+                                    })
                                 }
                             )
                         }
@@ -260,9 +239,37 @@ fun SettingsScreen(
                         }
                     }
 
-                    // ── 2. BUDGET ─────────────────────────────────────────────
+                    // ── 2. CURRENCY ───────────────────────────────────────────
+                    SettingsGroup {
+                        GroupLabel("Currency")
+
+                        SettingsRow(
+                            icon      = Icons.Default.CurrencyExchange,
+                            label     = "Display currency",
+                            last      = true,
+                            clickable = { showCurrencyDialog = true }
+                        ) {
+                            val cur = uiState.currentCurrency
+                            Text(
+                                text     = "${cur.symbol}  ${cur.code}",
+                                fontSize = 13.sp,
+                                color    = colors.textMuted
+                            )
+                            Icon(
+                                Icons.Default.ChevronRight, null,
+                                Modifier.size(18.dp), tint = colors.textLight
+                            )
+                        }
+                    }
+
+                    // ── 3. BUDGET ─────────────────────────────────────────────
                     SettingsGroup {
                         GroupLabel("Budget")
+
+                        // Build a formatter for the currently selected currency
+                        val budgetFormatter = remember(uiState.currentCurrency) {
+                            CurrencyFormatter(uiState.currentCurrency)
+                        }
 
                         SettingsRow(
                             icon      = Icons.Default.AccountBalanceWallet,
@@ -272,7 +279,8 @@ fun SettingsScreen(
                         ) {
                             Text(
                                 text     = if (uiState.monthlyBudget > 0)
-                                    "$${"%,.0f".format(uiState.monthlyBudget)}" else "Not set",
+                                    budgetFormatter.format(uiState.monthlyBudget)
+                                else "Not set",
                                 fontSize = 13.sp,
                                 color    = colors.textMuted
                             )
@@ -280,7 +288,6 @@ fun SettingsScreen(
                                 Modifier.size(18.dp), tint = colors.textLight)
                         }
 
-                        // Budget usage bar
                         val budget = uiState.monthlyBudget
                         val spent  = uiState.currentMonthSpent
                         val pct    = if (budget > 0) (spent / budget).coerceIn(0.0, 1.0) else 0.0
@@ -298,14 +305,13 @@ fun SettingsScreen(
                                 verticalAlignment     = Alignment.CenterVertically
                             ) {
                                 Text("Budget usage",
-                                    fontSize   = 14.sp, fontWeight = FontWeight.Medium,
-                                    color      = colors.textDark)
+                                    fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                                    color = colors.textDark)
                                 Text("${(pct * 100).toInt()}% used",
-                                    fontSize   = 14.sp, fontWeight = FontWeight.Bold,
-                                    color      = ColPrimary)
+                                    fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                                    color = ColPrimary)
                             }
 
-                            // Track + gradient fill
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -325,15 +331,15 @@ fun SettingsScreen(
                                 modifier              = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("$${"%,.0f".format(spent)} spent",
+                                Text("${budgetFormatter.format(spent)} spent",
                                     fontSize = 11.sp, color = colors.textMuted)
-                                Text("$${"%,.0f".format(left)} remaining",
+                                Text("${budgetFormatter.format(left)} remaining",
                                     fontSize = 11.sp, color = colors.textMuted)
                             }
                         }
                     }
 
-                    // ── 3. NOTIFICATIONS ──────────────────────────────────────
+                    // ── 4. NOTIFICATIONS ──────────────────────────────────────
                     SettingsGroup {
                         GroupLabel("Notifications")
 
@@ -361,7 +367,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    // ── 4. DATA & EXPORT ──────────────────────────────────────
+                    // ── 5. DATA & EXPORT ──────────────────────────────────────
                     SettingsGroup {
                         GroupLabel("Data & Export")
 
@@ -370,18 +376,14 @@ fun SettingsScreen(
                             label     = "Export to CSV",
                             last      = false,
                             clickable = { if (!uiState.isExporting) viewModel.exportAsCsv() }
-                        ) {
-                            ExportTrailing(uiState.isExporting)
-                        }
+                        ) { ExportTrailing(uiState.isExporting) }
 
                         SettingsRow(
                             icon      = Icons.Default.Description,
                             label     = "Export to Text",
                             last      = false,
                             clickable = { if (!uiState.isExporting) viewModel.exportAsText() }
-                        ) {
-                            ExportTrailing(uiState.isExporting)
-                        }
+                        ) { ExportTrailing(uiState.isExporting) }
 
                         SettingsRow(
                             icon       = Icons.Default.DeleteForever,
@@ -396,7 +398,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    // ── 5. ABOUT ──────────────────────────────────────────────
+                    // ── 6. ABOUT ──────────────────────────────────────────────
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -405,7 +407,6 @@ fun SettingsScreen(
                             .background(colors.surface)
                     ) {
                         Column {
-                            // 4dp gradient strip (same in both modes)
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -451,14 +452,122 @@ fun SettingsScreen(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sub-components — all consume LocalSettingsColors instead of hardcoded values
+// Currency picker dialog
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Themed rounded group card.
- * Light: white bg + primary-tinted 0.5dp border.
- * Dark:  #1A1F2E bg + primary-tinted 0.5dp border (matching InsightCard).
- */
+@Composable
+private fun CurrencyPickerDialog(
+    currentCurrency : Currency,
+    colors          : SettingsColors,
+    onSelect        : (Currency) -> Unit,
+    onDismiss       : () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest  = onDismiss,
+        containerColor    = colors.surface,
+        titleContentColor = colors.textDark,
+        title = {
+            Text(
+                "Select Currency",
+                fontWeight = FontWeight.ExtraBold,
+                fontSize   = 18.sp
+            )
+        },
+        text = {
+            // Scrollable currency list
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                SUPPORTED_CURRENCIES.forEach { currency ->
+                    val isSelected = currency.code == currentCurrency.code
+                    CurrencyPickerRow(
+                        currency   = currency,
+                        isSelected = isSelected,
+                        colors     = colors,
+                        onClick    = { onSelect(currency) }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = colors.textMuted)
+            }
+        }
+    )
+}
+
+@Composable
+private fun CurrencyPickerRow(
+    currency   : Currency,
+    isSelected : Boolean,
+    colors     : SettingsColors,
+    onClick    : () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(
+                if (isSelected) ColPrimary.copy(alpha = 0.10f) else Color.Transparent
+            )
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment     = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Symbol pill
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(
+                    if (isSelected) ColPrimary.copy(alpha = 0.15f)
+                    else colors.segBg
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text       = currency.symbol,
+                fontSize   = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color      = if (isSelected) ColPrimary else colors.textDark,
+                maxLines   = 1
+            )
+        }
+
+        // Code + name
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text       = currency.code,
+                fontSize   = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color      = if (isSelected) ColPrimary else colors.textDark
+            )
+            Text(
+                text     = currency.name,
+                fontSize = 11.sp,
+                color    = colors.textMuted
+            )
+        }
+
+        // Checkmark for selected currency
+        if (isSelected) {
+            Icon(
+                imageVector        = Icons.Default.Check,
+                contentDescription = "Selected",
+                tint               = ColPrimary,
+                modifier           = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-components (unchanged from original)
+// ─────────────────────────────────────────────────────────────────────────────
+
 @Composable
 private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
     val colors = LocalSettingsColors.current
@@ -472,9 +581,6 @@ private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
     )
 }
 
-/**
- * Teal uppercase group label — colour unchanged across modes (primary teal reads well on both).
- */
 @Composable
 private fun GroupLabel(text: String) {
     Text(
@@ -483,26 +589,21 @@ private fun GroupLabel(text: String) {
         fontWeight    = FontWeight.Bold,
         color         = ColPrimary,
         letterSpacing = 0.08.sp,
-        modifier      = Modifier.padding(start = 16.dp, top = 12.dp,
-            end = 16.dp, bottom = 4.dp)
+        modifier      = Modifier.padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 4.dp)
     )
 }
 
-/**
- * Single settings row: [icon] [label………………] [trailing]
- * Divider colour switches from #F5F5F5 (light) to #2A2F3E (dark).
- */
 @Composable
 private fun SettingsRow(
     icon       : ImageVector,
     label      : String,
     last       : Boolean,
     iconTint   : Color             = ColPrimary,
-    labelColor : Color?            = null,          // null → resolves from LocalSettingsColors
+    labelColor : Color?            = null,
     clickable  : (() -> Unit)?     = null,
     trailing   : @Composable RowScope.() -> Unit
 ) {
-    val colors     = LocalSettingsColors.current
+    val colors        = LocalSettingsColors.current
     val resolvedLabel = labelColor ?: colors.textDark
 
     Column {
@@ -514,13 +615,7 @@ private fun SettingsRow(
             verticalAlignment     = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Icon(
-                imageVector        = icon,
-                contentDescription = null,
-                modifier           = Modifier.size(20.dp),
-                tint               = iconTint
-            )
-
+            Icon(icon, null, Modifier.size(20.dp), tint = iconTint)
             Text(
                 text       = label,
                 fontSize   = 14.sp,
@@ -528,20 +623,15 @@ private fun SettingsRow(
                 color      = resolvedLabel,
                 modifier   = Modifier.weight(1f)
             )
-
             Row(
                 verticalAlignment     = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) { trailing() }
         }
-
         if (!last) HorizontalDivider(color = colors.divider, thickness = 0.5.dp)
     }
 }
 
-/**
- * Chevron or spinner for export rows.
- */
 @Composable
 private fun RowScope.ExportTrailing(isExporting: Boolean) {
     val colors = LocalSettingsColors.current
@@ -552,16 +642,10 @@ private fun RowScope.ExportTrailing(isExporting: Boolean) {
             color       = colors.textLight
         )
     } else {
-        Icon(Icons.Default.ChevronRight, null,
-            Modifier.size(18.dp), tint = colors.textLight)
+        Icon(Icons.Default.ChevronRight, null, Modifier.size(18.dp), tint = colors.textLight)
     }
 }
 
-/**
- * Three-segment theme control.
- * Dark mode: #252B3B track, inactive label uses dark text-light.
- * Active segment: always primary teal with white label.
- */
 @Composable
 private fun SegControl(
     options  : List<String>,
@@ -591,9 +675,9 @@ private fun SegControl(
                     fontSize   = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     color      = when {
-                        active            -> Color.White
-                        colors.isDark     -> colors.textMuted
-                        else              -> ColTextMutedLight
+                        active        -> Color.White
+                        colors.isDark -> colors.textMuted
+                        else          -> ColTextMutedLight
                     }
                 )
             }
@@ -601,10 +685,6 @@ private fun SegControl(
     }
 }
 
-/**
- * Toggle switch — track colour is always primary teal when checked, thumb is always white.
- * Unchecked track: #CCCCCC (light) / #3A3F4E (dark) for better visibility on dark backgrounds.
- */
 @Composable
 private fun HtmlToggle(
     checked         : Boolean,
@@ -623,10 +703,5 @@ private fun HtmlToggle(
     )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** True when the colour's perceived luminance puts it in "light mode" territory. */
 private fun Color.isBright(): Boolean =
     (0.2126f * red + 0.7152f * green + 0.0722f * blue) > 0.5f

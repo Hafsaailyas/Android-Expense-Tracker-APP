@@ -2,6 +2,7 @@ package com.hafsaIlyas.expensetracker.data.ai
 
 // data/ai/AiInsightService.kt
 
+import com.hafsaIlyas.expensetracker.data.currency.Currency
 import com.hafsaIlyas.expensetracker.data.local.entity.Expense
 
 // ── Domain models ─────────────────────────────────────────────────────────────
@@ -39,6 +40,7 @@ interface AiInsightService {
      */
     suspend fun generateInsights(
         expenses: List<Expense>,
+        currency: Currency,
         monthlyBudget: Double = 0.0   // 0 = no budget set
     ): InsightResult
 }

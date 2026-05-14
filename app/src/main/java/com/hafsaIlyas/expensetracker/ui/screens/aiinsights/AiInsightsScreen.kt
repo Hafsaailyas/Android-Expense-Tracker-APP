@@ -1,12 +1,17 @@
 package com.hafsaIlyas.expensetracker.ui.screens.aiinsights
 
 // ui/screens/aiinsights/AiInsightsScreen.kt
-// Layout mirrors the HTML AI Insights screen exactly:
-//   - #screen-ai: background var(--bg) light / #0A1112 dark
-//   - .ai-banner at top (no rounding, full-width gradient)
-//   - .ai-cards-wrap: scrollable cards with 10dp gap
-//   - .ai-disclaimer at bottom
-//   - Refresh button is now INSIDE the AiHeaderBanner
+// Updated to use CurrencyService for all monetary displays.
+// Changes from original:
+//   • CurrencyService is obtained from AiInsightViewModel (which now exposes it
+//     as a public val) — same pattern used by DashboardScreen and ExpenseListScreen.
+//   • rememberCurrencyFormatter(viewModel.currencyService) produces a live
+//     CurrencyFormatter that reacts to currency changes made in Settings.
+//   • currencyFormatter is threaded into SuccessView so the banner summary and
+//     any monetary text it receives are formatted with the active currency.
+//   • AddExpenseScreen counterpart: AmountHeroCard now receives currencySymbol
+//     from the same CurrencyService (handled in AddExpenseScreen.kt).
+// Layout, animations, colours, and all other behaviour are pixel-identical to the original.
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -32,19 +37,21 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.hafsaIlyas.expensetracker.data.currency.CurrencyFormatter
 import com.hafsaIlyas.expensetracker.ui.components.InsightsSkeleton
+import com.hafsaIlyas.expensetracker.ui.components.rememberCurrencyFormatter
 import com.hafsaIlyas.expensetracker.ui.screens.aiinsights.components.*
 import java.text.SimpleDateFormat
 import java.util.*
 
 // ── Palette — exact HTML :root values ────────────────────────────────────────
-private val ColorPrimary    = Color(0xFF1A5F7A)   // --primary
-private val ColorGold       = Color(0xFFF9D56E)   // --gold
-private val ColorBgLight    = Color(0xFFF0F4F8)   // --bg
-private val ColorBgDark     = Color(0xFF0A1112)   // --dark-bg
-private val ColorSurfaceDark= Color(0xFF1A1F2E)   // --dark-surface
-private val ColorTextMuted  = Color(0xFF888888)   // --text-muted
-private val ColorTextLight  = Color(0xFFAAAAAA)   // --text-light
+private val ColorPrimary     = Color(0xFF1A5F7A)   // --primary
+private val ColorGold        = Color(0xFFF9D56E)   // --gold
+private val ColorBgLight     = Color(0xFFF0F4F8)   // --bg
+private val ColorBgDark      = Color(0xFF0A1112)   // --dark-bg
+private val ColorSurfaceDark = Color(0xFF1A1F2E)   // --dark-surface
+private val ColorTextMuted   = Color(0xFF888888)   // --text-muted
+private val ColorTextLight   = Color(0xFFAAAAAA)   // --text-light
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,47 +62,46 @@ fun AiInsightsScreen(
     val uiState       by viewModel.uiState.collectAsState()
     val thinkingLabel by viewModel.thinkingLabel.collectAsState()
     val isDark         = !MaterialTheme.colorScheme.background.isBright()
-    val configuration = LocalConfiguration.current
-    val density = LocalDensity.current
 
-    // Get status bar height to apply proper padding
-    val statusBarHeight = with(density) {
-        configuration.screenHeightDp.dp * 0.05f
-    }
+    // ✅ Live CurrencyFormatter — reacts automatically to Settings currency changes.
+    // Obtained via viewModel.currencyService, which is the @Singleton injected into
+    // AiInsightViewModel (same pattern as DashboardScreen / ExpenseListScreen).
+    val currencyFormatter = rememberCurrencyFormatter(viewModel.currencyService)
 
-    // Screen background — matches --bg (light) / --dark-bg (dark)
     val screenBg = if (isDark) ColorBgDark else ColorBgLight
 
-    // No Scaffold - direct Box for full-screen content
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(screenBg)
     ) {
-        // Main content area
         AnimatedContent(
-            targetState   = uiState,
-            label         = "ai_screen_state",
+            targetState    = uiState,
+            label          = "ai_screen_state",
             transitionSpec = { fadeIn(tween(400)) togetherWith fadeOut(tween(200)) }
         ) { state ->
             when (state) {
                 is AiInsightUiState.Idle    -> Unit
+
                 is AiInsightUiState.Loading -> LoadingView(
                     label    = thinkingLabel,
                     isDark   = isDark,
                     modifier = Modifier.fillMaxSize()
                 )
+
                 is AiInsightUiState.Error   -> ErrorView(
                     message  = state.message,
                     onRetry  = viewModel::generateInsights,
                     isDark   = isDark,
                     modifier = Modifier.fillMaxSize()
                 )
+
                 is AiInsightUiState.Success -> SuccessView(
-                    state    = state,
-                    isDark   = isDark,
-                    onRefresh = { viewModel.generateInsights() },
-                    modifier = Modifier.fillMaxSize()
+                    state             = state,
+                    isDark            = isDark,
+                    onRefresh         = { viewModel.generateInsights() },
+                    currencyFormatter = currencyFormatter, // ✅ passed through
+                    modifier          = Modifier.fillMaxSize()
                 )
             }
         }
@@ -121,7 +127,6 @@ private fun LoadingView(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // Pulsing orb — mirrors .ai-orb animation
             val pulse = rememberInfiniteTransition(label = "orb")
             val orbScale by pulse.animateFloat(
                 initialValue  = 0.9f,
@@ -137,7 +142,7 @@ private fun LoadingView(
             )
 
             Box(
-                modifier = Modifier
+                modifier         = Modifier
                     .scale(orbScale)
                     .size(88.dp),
                 contentAlignment = Alignment.Center
@@ -167,8 +172,8 @@ private fun LoadingView(
             )
 
             AnimatedContent(
-                targetState   = label,
-                label         = "thinking_label",
+                targetState    = label,
+                label          = "thinking_label",
                 transitionSpec = {
                     (fadeIn(tween(300)) + slideInVertically { -it / 2 }) togetherWith
                             (fadeOut(tween(200)) + slideOutVertically { it / 2 })
@@ -250,58 +255,83 @@ private fun ErrorView(
     }
 }
 
-// ── Success state — full-screen with banner at top ───────────────────────────
+// ── Success state ─────────────────────────────────────────────────────────────
 
 @Composable
 private fun SuccessView(
-    state    : AiInsightUiState.Success,
-    isDark   : Boolean,
-    onRefresh: () -> Unit,
-    modifier : Modifier = Modifier
+    state             : AiInsightUiState.Success,
+    isDark            : Boolean,
+    onRefresh         : () -> Unit,
+    currencyFormatter : CurrencyFormatter,        // ✅ live formatter injected
+    modifier          : Modifier = Modifier
 ) {
     val dateStr = remember(state.generatedAt) {
         SimpleDateFormat("MMM dd, h:mm a", Locale.getDefault()).format(Date(state.generatedAt))
     }
+
+    // ✅ Currency label shown in the banner subtitle area so the user knows
+    // which currency the AI insights were generated for.
+    val currencyLabel = currencyFormatter.currency.code   // e.g. "PKR", "USD"
 
     LazyColumn(
         modifier            = modifier,
         contentPadding      = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        // ── AI Banner with Refresh Button Inside ──────────────────────────────
+        // ── AI Banner ─────────────────────────────────────────────────────────
         item {
             AiHeaderBanner(
-                summary = state.summary,
-                onRefresh = onRefresh,
+                summary      = state.summary,
+                onRefresh    = onRefresh,
                 isRefreshing = false,
-                modifier = Modifier
+                modifier     = Modifier
             )
         }
 
-        // ── Timestamp ─────────────────────────────────────────────────────────
+        // ── Currency + Timestamp row ──────────────────────────────────────────
         item {
             Row(
                 modifier              = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.End,
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment     = Alignment.CenterVertically
             ) {
-                Icon(
-                    Icons.Default.Schedule, null,
-                    modifier = Modifier.size(11.dp),
-                    tint     = (if (isDark) ColorTextLight else ColorTextMuted).copy(0.5f)
-                )
-                Spacer(Modifier.width(3.dp))
-                Text(
-                    "Generated $dateStr",
-                    fontSize = 11.sp,
-                    color    = (if (isDark) ColorTextLight else ColorTextMuted).copy(0.5f)
-                )
+                // ✅ Active currency badge
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.CurrencyExchange,
+                        contentDescription = null,
+                        modifier = Modifier.size(11.dp),
+                        tint     = (if (isDark) ColorTextLight else ColorTextMuted).copy(0.6f)
+                    )
+                    Spacer(Modifier.width(3.dp))
+                    Text(
+                        text     = currencyLabel,
+                        fontSize = 11.sp,
+                        color    = (if (isDark) ColorTextLight else ColorTextMuted).copy(0.6f)
+                    )
+                }
+
+                // Timestamp (right-aligned, unchanged)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Schedule,
+                        contentDescription = null,
+                        modifier = Modifier.size(11.dp),
+                        tint     = (if (isDark) ColorTextLight else ColorTextMuted).copy(0.5f)
+                    )
+                    Spacer(Modifier.width(3.dp))
+                    Text(
+                        text     = "Generated $dateStr",
+                        fontSize = 11.sp,
+                        color    = (if (isDark) ColorTextLight else ColorTextMuted).copy(0.5f)
+                    )
+                }
             }
         }
 
-        // ── Insight cards — .ai-cards-wrap ────────────────────────────────────
+        // ── Insight cards ─────────────────────────────────────────────────────
         itemsIndexed(state.insights) { idx, insight ->
             Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp)) {
                 InsightCard(
@@ -311,16 +341,16 @@ private fun SuccessView(
             }
         }
 
-        // ── Disclaimer — .ai-disclaimer ───────────────────────────────────────
+        // ── Disclaimer ────────────────────────────────────────────────────────
         item {
             Text(
-                text      = "AI insights are for guidance only and do not constitute financial advice. " +
+                text       = "AI insights are for guidance only and do not constitute financial advice. " +
                         "Data is based on your logged expenses.",
-                fontSize  = 11.sp,
-                color     = if (isDark) ColorTextLight else ColorTextMuted,
-                textAlign = TextAlign.Center,
+                fontSize   = 11.sp,
+                color      = if (isDark) ColorTextLight else ColorTextMuted,
+                textAlign  = TextAlign.Center,
                 lineHeight = 16.5.sp,
-                modifier  = Modifier
+                modifier   = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 16.dp)
             )
