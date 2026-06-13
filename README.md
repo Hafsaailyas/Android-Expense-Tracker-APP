@@ -46,13 +46,13 @@ This project was built to demonstrate modern Android development practices: clea
 
 | Screen | Light Mode | Dark Mode |
 |--------|------------|-----------|
-| **Splash Screen** | ![Splash](screenshots/splash-screen.png) | — |
-| **Onboarding** | ![Onboarding 1](screenshots/onboarding-1.png) | ![Onboarding Dark](screenshots/onboarding-dark.png) |
-| **Dashboard** | ![Dashboard Light](screenshots/dashboard-light.png) | ![Dashboard Dark](screenshots/dashboard-dark.png) |
-| **Add Expense** | ![Add Expense](screenshots/add-expense.png) | ![Add Expense Dark](screenshots/add-expense-dark.png) |
-| **Expense List** | ![Expense List](screenshots/expense-list.png) | ![Expense List Dark](screenshots/expense-list-dark.png) |
-| **AI Insights** | ![AI Insights](screenshots/ai-insights.png) | ![AI Insights Dark](screenshots/ai-insights-dark.png) |
-| **Settings** | ![Settings](screenshots/settings.png) | ![Settings Dark](screenshots/settings-dark.png) |
+| **Splash Screen** | ![Splash](screenshots/splash-screen.jpeg) | — |
+| **Onboarding** | ![Onboarding 1](screenshots/onboarding-1.jpeg) | ![Onboarding Dark](screenshots/onboarding-dark.jpeg) |
+| **Dashboard** | ![Dashboard Light](screenshots/dashboard-light.jpeg) | ![Dashboard Dark](screenshots/dashboard-dark.jpeg) |
+| **Add Expense** | ![Add Expense](screenshots/add-expense.jpeg) | ![Add Expense Dark](screenshots/add-expense-dark.jpeg) |
+| **Expense List** | ![Expense List](screenshots/expense-list.jpeg) | ![Expense List Dark](screenshots/expense-list-dark.jpeg) |
+| **AI Insights** | ![AI Insights](screenshots/ai-insights.jpeg) | ![AI Insights Dark](screenshots/ai-insights-dark.jpeg) |
+| **Settings** | ![Settings](screenshots/settings.jpeg) | ![Settings Dark](screenshots/settings-dark.jpeg) |
 
 > 📸 **Screenshots folder:** All images are stored in `/screenshots/` — add your actual screenshots there.
 
@@ -667,21 +667,21 @@ Create the `screenshots/` folder in your project root and add:
 
 ```
 screenshots/
-├── splash-screen.png
-├── onboarding-1.png
-├── onboarding-2.png
-├── onboarding-3.png
-├── onboarding-dark.png
-├── dashboard-light.png
-├── dashboard-dark.png
-├── add-expense.png
-├── add-expense-dark.png
-├── expense-list.png
-├── expense-list-dark.png
-├── ai-insights.png
-├── ai-insights-dark.png
-├── settings.png
-└── settings-dark.png
+├── splash-screen.jpeg
+├── onboarding-1.jpeg
+├── onboarding-2.jpeg
+├── onboarding-3.jpeg
+├── onboarding-dark.jpeg
+├── dashboard-light.jpeg
+├── dashboard-dark.jpeg
+├── add-expense.jpeg
+├── add-expense-dark.jpeg
+├── expense-list.jpeg
+├── expense-list-dark.jpeg
+├── ai-insights.jpeg
+├── ai-insights-dark.jpeg
+├── settings.jpeg
+└── settings-dark.jpeg
 ```
 
 ---
